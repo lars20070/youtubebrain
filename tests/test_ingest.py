@@ -20,6 +20,15 @@ _VALID_RECORD: dict[str, object] = {
     "activityControls": ["YouTube watch history"],
 }
 
+_UNRESOLVED_RECORD: dict[str, object] = {
+    "header": "YouTube",
+    "title": "Watched https://www.youtube.com/watch?v=B3ij-TSeXMs",
+    "titleUrl": "https://www.youtube.com/watch?v=B3ij-TSeXMs",
+    "time": "2025-10-11T10:33:36.215Z",
+    "products": ["YouTube"],
+    "activityControls": ["YouTube watch history"],
+}
+
 
 def _write_history(tmp_path: Path, records: list[dict[str, object]]) -> Path:
     path = tmp_path / "watch-history.json"
@@ -79,6 +88,29 @@ def test_main_prints_titles(
     main()
     out = capsys.readouterr().out
     assert out.splitlines() == ["Watched Test Video", "Second Video"]
+
+
+# @lat: [[ingest#Tests#Filters unresolved titles]]
+def test_filters_unresolved_titles(tmp_path: Path) -> None:
+    """Records whose title is a URL placeholder are silently dropped."""
+    path = _write_history(tmp_path, [_VALID_RECORD, _UNRESOLVED_RECORD])
+    videos = load_watch_history(path)
+    assert len(videos) == 1
+    assert videos[0].title == "Watched Test Video"
+
+
+# @lat: [[ingest#Tests#main skips unresolved titles]]
+def test_main_skips_unresolved_titles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() does not print URL-shaped placeholder titles."""
+    path = _write_history(tmp_path, [_VALID_RECORD, _UNRESOLVED_RECORD])
+    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", path)
+    main()
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["Watched Test Video"]
 
 
 # @lat: [[ingest#Tests#Default path constant]]
