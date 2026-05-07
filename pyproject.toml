@@ -20,10 +20,9 @@ dependencies = [
 
 [project.scripts]
 minimalexample = "youtubebrain.helloworld:main"
-uml = "youtubebrain.cli:uml"
 
 [tool.uv]
-package = false
+package = true
 
 [tool.ruff]
 line-length = 150
