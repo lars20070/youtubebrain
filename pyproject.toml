@@ -7,15 +7,18 @@ authors = [{ name = "Lars Nilse", email = "l.nilse@dunelm.org.uk" }]
 requires-python = ">=3.11"
 dependencies = [
   "loguru>=0.7.3",
-  "pytest>=8.3.4",
-  "ruff>=0.9.5",
-  "pylint>=3.3.4",
-  "pytest-xdist>=3.6.1",
   "tavily-python>=0.5.1",
-  "pytest-cov>=6.0.0",
   "pydantic>=2.10.6",
-  "pytest-asyncio>=0.25.3",
   "pypandoc>=1.15",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.4",
+  "pytest-asyncio>=0.25.3",
+  "pytest-cov>=6.0.0",
+  "pytest-xdist>=3.6.1",
+  "ruff>=0.9.5",
 ]
 
 [project.scripts]
@@ -55,7 +58,7 @@ ignore = [
 convention = "google"
 
 [tool.pytest.ini_options]
-addopts = ["-m", "not paid"] # Skip tests that require a paid API key
+addopts = ["-m", "not paid", "--cov"] # Skip tests that require a paid API key; collect coverage
 asyncio_default_fixture_loop_scope = "session" # Use a single event loop for all tests. Switch to "function" for a new event loop for every test (more isolation).
 
 [tool.coverage.run]

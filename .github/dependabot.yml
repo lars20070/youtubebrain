@@ -5,7 +5,7 @@
 
 version: 2
 updates:
-  - package-ecosystem: "pip" # uv and poetry use pip
+  - package-ecosystem: "uv"
     directory: "/" # pyproject.toml is in the root directory
     schedule:
       interval: "weekly"
