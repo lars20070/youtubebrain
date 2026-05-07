@@ -1,0 +1,19 @@
+name: lat check
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lat-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+      - name: Run lat check
+        uses: lars20070/lat-check-action@v1
