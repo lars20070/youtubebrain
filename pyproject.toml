@@ -26,7 +26,9 @@ package = true
 
 [tool.ruff]
 line-length = 150
-lint.select = [
+
+[tool.ruff.lint]
+select = [
   "E",   # pycodestyle
   "F",   # pyflakes
   "I",   # isort
@@ -41,15 +43,16 @@ lint.select = [
   "ANN", # type annotations
   "TC",  # type checking
 ]
-lint.ignore = [
+ignore = [
   "SIM108",  # Ignore ternary operators rule i.e. allow if-else blocks
-  "PD901",   # Allow variable name `df` for dataframes
   "PLR2004", # Allow magic values
   "PLR0915", # Allow long functions
   "PLR0912", # Allow many branches
   "PLR0913", # Allow many arguments
 ]
-lint.pydocstyle.convention = "google"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.pytest.ini_options]
 addopts = ["-m", "not paid"] # Skip tests that require a paid API key
