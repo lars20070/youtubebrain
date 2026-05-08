@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
+from youtubebrain import logger
 from youtubebrain.models import WatchedVideo
 
 WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-history.json")
@@ -26,14 +27,19 @@ def _is_unresolved(video: WatchedVideo) -> bool:
 # @lat: [[ingest#Loader]]
 def load_watch_history(path: Path) -> list[WatchedVideo]:
     """Parse Takeout watch-history.json, dropping non-watch and unresolved entries."""
+    logger.info(f"Loading watch history from {path}.")
     videos = _adapter.validate_json(path.read_bytes())
-    return [v for v in videos if _is_video_watch(v) and not _is_unresolved(v)]
+    kept = [v for v in videos if _is_video_watch(v) and not _is_unresolved(v)]
+    logger.info(f"Parsed {len(videos)} records, kept {len(kept)} after filtering.")
+    return kept
 
 
 def main() -> None:
     """Print every watched video's title to stdout."""
+    logger.info("Starting main function.")
     for video in load_watch_history(WATCH_HISTORY_PATH):
         print(video.title)
+    logger.info("Finished main function.")
 
 
 if __name__ == "__main__":

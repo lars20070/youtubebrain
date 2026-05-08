@@ -16,6 +16,8 @@ Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and
 
 [[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning. Running the module prints each title to stdout.
 
+Progress and per-run record counts (parsed, kept) are emitted via the project loguru logger to `youtubebrain.log`; stdout carries only the titles, keeping it pipe-friendly.
+
 ## Non-watch activity filtering
 
 [[src/youtubebrain/ingest.py#_is_video_watch]] keeps only records whose `title` starts with `"Watched "`. `load_watch_history` silently drops anything else.
