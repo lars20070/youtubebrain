@@ -15,3 +15,10 @@ __pycache__/
 # Coding agents
 .mcp.json
 .cursor/mcp.json
+lat.md/.cache
+
+# YouTube
+*-history.json
+
+# Obsidian
+lat.md/.obsidian/workspace.json
