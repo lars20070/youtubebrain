@@ -14,7 +14,19 @@ Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and
 
 ## Loader
 
-[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, and applies [[ingest#Unresolved title filtering]] before returning. Running the module prints each title to stdout.
+[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning. Running the module prints each title to stdout.
+
+## Non-watch activity filtering
+
+[[src/youtubebrain/ingest.py#_is_video_watch]] keeps only records whose `title` starts with `"Watched "`. `load_watch_history` silently drops anything else.
+
+Detection rule: a record is a video watch iff `title.startswith("Watched ")`. Other activity types — most commonly community-post views with a `"Viewed "` prefix — are excluded.
+
+**Motivation.** The Takeout `watch-history.json` array is not strictly a list of video watches. It also contains other YouTube activity types interleaved into the same export under the same `WatchedVideo` schema. The most common alternative is community-post views, which appear with a `"Viewed "` prefix and embed the full post body text directly into the `title` field. Their `titleUrl` points at `/post/<id>` rather than `/watch?v=<id>`.
+
+These records are semantically unrelated to video watches: there is no video duration, no video metadata, and the embedded prose is sometimes long-form (announcements, apologies, link previews). Mixing them into a video-only pipeline would skew counts, embeddings and per-channel aggregations, and pollute downstream search with text that does not describe a watched video.
+
+Filtering by the `"Watched "` prefix is the simplest, most reliable way to keep the dataset focused on actual video watches without enumerating every alternative activity type Takeout might emit. The drop is silent for the same reason as [[ingest#Unresolved title filtering]] — the count is small but non-zero on long histories, and per-record warnings would be noise rather than signal.
 
 ## Unresolved title filtering
 
@@ -59,6 +71,14 @@ Calling `main()` against a monkeypatched watch-history.json prints every video t
 ### main skips unresolved titles
 
 `main()` does not print URL-shaped placeholder titles — only resolvable video titles reach stdout.
+
+### Filters non-watch entries
+
+`load_watch_history` drops records whose `title` does not start with `Watched `, removing community-post views and other non-watch activity from the returned list.
+
+### main skips non-watch entries
+
+`main()` does not print non-watch activity titles — only video-watch titles reach stdout.
 
 ### Default path constant
 

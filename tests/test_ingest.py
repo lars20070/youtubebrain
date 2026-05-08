@@ -29,6 +29,15 @@ _UNRESOLVED_RECORD: dict[str, object] = {
     "activityControls": ["YouTube watch history"],
 }
 
+_NON_WATCH_RECORD: dict[str, object] = {
+    "header": "YouTube",
+    "title": "Viewed G'day all - just letting you know about today's episode delay.",
+    "titleUrl": "https://www.youtube.com/post/UgkxMzjzCEjX7KL27rz",
+    "time": "2025-10-11T09:00:00.000Z",
+    "products": ["YouTube"],
+    "activityControls": ["YouTube watch history"],
+}
+
 
 def _write_history(tmp_path: Path, records: list[dict[str, object]]) -> Path:
     path = tmp_path / "watch-history.json"
@@ -82,12 +91,12 @@ def test_main_prints_titles(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """main() prints every video title to stdout, one per line."""
-    record_b = {**_VALID_RECORD, "title": "Second Video"}
+    record_b = {**_VALID_RECORD, "title": "Watched Second Video"}
     path = _write_history(tmp_path, [_VALID_RECORD, record_b])
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", path)
     main()
     out = capsys.readouterr().out
-    assert out.splitlines() == ["Watched Test Video", "Second Video"]
+    assert out.splitlines() == ["Watched Test Video", "Watched Second Video"]
 
 
 # @lat: [[ingest#Tests#Filters unresolved titles]]
@@ -107,6 +116,29 @@ def test_main_skips_unresolved_titles(
 ) -> None:
     """main() does not print URL-shaped placeholder titles."""
     path = _write_history(tmp_path, [_VALID_RECORD, _UNRESOLVED_RECORD])
+    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", path)
+    main()
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["Watched Test Video"]
+
+
+# @lat: [[ingest#Tests#Filters non-watch entries]]
+def test_filters_non_watch_entries(tmp_path: Path) -> None:
+    """Records whose title does not start with 'Watched ' are silently dropped."""
+    path = _write_history(tmp_path, [_VALID_RECORD, _NON_WATCH_RECORD])
+    videos = load_watch_history(path)
+    assert len(videos) == 1
+    assert videos[0].title == "Watched Test Video"
+
+
+# @lat: [[ingest#Tests#main skips non-watch entries]]
+def test_main_skips_non_watch_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main() does not print non-watch activity titles."""
+    path = _write_history(tmp_path, [_VALID_RECORD, _NON_WATCH_RECORD])
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", path)
     main()
     out = capsys.readouterr().out
