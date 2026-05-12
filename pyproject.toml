@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 minimalexample = "youtubebrain.helloworld:main"
+ingest = "youtubebrain.ingest:main"
 
 [tool.uv]
 package = true
