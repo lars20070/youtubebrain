@@ -67,6 +67,8 @@ File layout:
 - ...
 ```
 
+The leading `Watched ` substring is stripped from the title before rendering — every kept record carries that prefix by construction of [[ingest#Non-watch activity filtering]], so the boilerplate adds no signal and dropping it keeps titles readable.
+
 Multiple subtitles are rendered as separate bullets. An empty subtitles list renders `_(none)_` under the Channels heading so the section is never absent.
 
 Writes are idempotent: a second call overwrites the file in place, so re-running `uv run ingest` against an updated Takeout export refreshes existing files without leaving stale duplicates.
@@ -130,6 +132,10 @@ A record with multiple subtitles renders each channel as its own markdown bullet
 ### Render empty subtitles
 
 An empty subtitles list renders a `_(none)_` placeholder under the Channels heading so the section is never absent.
+
+### Render strips watched prefix
+
+The `Watched ` prefix from Takeout titles is removed before the title is written to the markdown file.
 
 ### Write markdown creates file
 

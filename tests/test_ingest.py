@@ -148,7 +148,7 @@ def test_render_markdown_contains_all_fields() -> None:
     video = _build_video()
     body = _render_markdown(video)
     assert "## Video" in body
-    assert "- Title: Watched Test Video" in body
+    assert "- Title: Test Video" in body
     assert "https://www.youtube.com/watch?v=abc123" in body
     assert "Test Channel" in body
     assert "https://www.youtube.com/channel/UCxxx" in body
@@ -178,6 +178,15 @@ def test_render_markdown_empty_subtitles() -> None:
     assert "_(none)_" in body
 
 
+# @lat: [[ingest#Tests#Render strips watched prefix]]
+def test_render_markdown_strips_watched_prefix() -> None:
+    """The leading 'Watched ' from the Takeout title is dropped in the Title bullet."""
+    video = _build_video(title="Watched Some Cool Video")
+    body = _render_markdown(video)
+    assert "- Title: Some Cool Video" in body
+    assert "- Title: Watched Some Cool Video" not in body
+
+
 # @lat: [[ingest#Tests#Write markdown creates file]]
 def test_write_markdown_creates_named_file(tmp_path: Path) -> None:
     """write_markdown writes a file named <video_id>.md in out_dir."""
@@ -185,7 +194,7 @@ def test_write_markdown_creates_named_file(tmp_path: Path) -> None:
     path = write_markdown(video, tmp_path)
     assert path == tmp_path / "JWWDqbcQoXA.md"
     assert path.exists()
-    assert "- Title: Watched Test Video" in path.read_text()
+    assert "- Title: Test Video" in path.read_text()
 
 
 # @lat: [[ingest#Tests#Write markdown overwrites]]
@@ -196,7 +205,7 @@ def test_write_markdown_overwrites_existing(tmp_path: Path) -> None:
     path.write_text("stale")
     write_markdown(video, tmp_path)
     assert "stale" not in path.read_text()
-    assert "- Title: Watched Test Video" in path.read_text()
+    assert "- Title: Test Video" in path.read_text()
 
 
 # @lat: [[ingest#Tests#Write markdown requires title URL]]

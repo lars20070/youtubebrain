@@ -44,7 +44,7 @@ def _render_markdown(video: WatchedVideo) -> str:
     lines = [
         "## Video",
         "",
-        f"- Title: {video.title}",
+        f"- Title: {video.title.removeprefix('Watched ')}",
         f"- Title URL: {video.title_url}",
         f"- Time: {video.time.isoformat()}",
         "",
