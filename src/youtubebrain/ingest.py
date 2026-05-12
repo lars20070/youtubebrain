@@ -1,13 +1,17 @@
 """Load YouTube watch history from Google Takeout."""
 
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-from pydantic import TypeAdapter
+from pydantic import HttpUrl, TypeAdapter
 
 from youtubebrain import logger
 from youtubebrain.models import WatchedVideo
 
 WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-history.json")
+
+# @lat: [[ingest#Default output directory]]
+MARKDOWN_RAW_DIR = Path("Markdown/raw")
 
 _adapter = TypeAdapter(list[WatchedVideo])
 
@@ -24,6 +28,48 @@ def _is_unresolved(video: WatchedVideo) -> bool:
     return video.title_url is not None and video.title == f"Watched {video.title_url}"
 
 
+# @lat: [[ingest#Video ID extraction]]
+def _video_id(url: HttpUrl) -> str:
+    """Extract the YouTube video ID (the 'v' query parameter) from a watch URL."""
+    params = parse_qs(urlparse(str(url)).query)
+    values = params.get("v")
+    if not values:
+        raise ValueError(f"URL has no 'v' query parameter: {url}")
+    return values[0]
+
+
+# @lat: [[ingest#Markdown writer]]
+def _render_markdown(video: WatchedVideo) -> str:
+    """Render a WatchedVideo as a markdown document body."""
+    lines = [
+        "## Video",
+        "",
+        f"- Title: {video.title}",
+        f"- Title URL: {video.title_url}",
+        f"- Time: {video.time.isoformat()}",
+        "",
+        "## Channels",
+        "",
+    ]
+    if video.subtitles:
+        lines.extend(f"- [{s.name}]({s.url})" for s in video.subtitles)
+    else:
+        lines.append("_(none)_")
+    lines.append("")
+    return "\n".join(lines)
+
+
+# @lat: [[ingest#Markdown writer]]
+def write_markdown(video: WatchedVideo, out_dir: Path) -> Path:
+    """Write a markdown file for video into out_dir, named <video_id>.md."""
+    if video.title_url is None:
+        raise ValueError(f"WatchedVideo has no title_url: {video.title!r}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{_video_id(video.title_url)}.md"
+    path.write_text(_render_markdown(video))
+    return path
+
+
 # @lat: [[ingest#Loader]]
 def load_watch_history(path: Path) -> list[WatchedVideo]:
     """Parse Takeout watch-history.json, dropping non-watch and unresolved entries."""
@@ -35,10 +81,13 @@ def load_watch_history(path: Path) -> list[WatchedVideo]:
 
 
 def main() -> None:
-    """Print every watched video's title to stdout."""
+    """Write a markdown file for every watched video to MARKDOWN_RAW_DIR."""
     logger.info("Starting main function.")
+    count = 0
     for video in load_watch_history(WATCH_HISTORY_PATH):
-        print(video.title)
+        write_markdown(video, MARKDOWN_RAW_DIR)
+        count += 1
+    logger.info(f"Wrote {count} markdown files to {MARKDOWN_RAW_DIR}.")
     logger.info("Finished main function.")
 
 

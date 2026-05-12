@@ -14,9 +14,9 @@ Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and
 
 ## Loader
 
-[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning. Running the module prints each title to stdout.
+[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning. Running the module writes one markdown file per kept video to [[ingest#Default output directory]].
 
-Progress and per-run record counts (parsed, kept) are emitted via the project loguru logger to `youtubebrain.log`; stdout carries only the titles, keeping it pipe-friendly.
+Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
 
 ## Non-watch activity filtering
 
@@ -42,6 +42,43 @@ Such entries carry no useful signal for downstream search, summarisation or topi
 
 Filtering at ingest is therefore preferred over carrying the entries downstream and filtering per-consumer. The drop is silent because the count is expected to be non-trivial in any long watch history (channel churn, copyright takedowns, privacy changes accumulate over years) and surfacing each one would be noise, not signal. If a future need arises to audit which videos were dropped, `_is_unresolved` can be reused directly against the unfiltered `TypeAdapter` output.
 
+## Video ID extraction
+
+[[src/youtubebrain/ingest.py#_video_id]] parses the `v` query parameter from a YouTube watch URL — for example `https://www.youtube.com/watch?v=JWWDqbcQoXA` yields `JWWDqbcQoXA`.
+
+A URL without a `v` parameter (e.g. a community-post URL of the form `/post/<id>`) raises `ValueError`. Non-watch records are already dropped by [[ingest#Non-watch activity filtering]] before reaching this function, so the raise is a hard schema-drift signal rather than an expected runtime branch.
+
+## Markdown writer
+
+[[src/youtubebrain/ingest.py#write_markdown]] writes a markdown file for one `WatchedVideo` into the configured output directory, named `<video_id>.md` where the ID comes from [[ingest#Video ID extraction]]. The body is produced by [[src/youtubebrain/ingest.py#_render_markdown]].
+
+File layout:
+
+```
+## Video
+
+- Title: {title}
+- Title URL: {title_url}
+- Time: {time}
+
+## Channels
+
+- [{name}]({url})
+- ...
+```
+
+Multiple subtitles are rendered as separate bullets. An empty subtitles list renders `_(none)_` under the Channels heading so the section is never absent.
+
+Writes are idempotent: a second call overwrites the file in place, so re-running `uv run ingest` against an updated Takeout export refreshes existing files without leaving stale duplicates.
+
+`write_markdown` raises `ValueError` if `title_url` is `None`. Such records survive `load_watch_history` (only URL-placeholder titles are dropped, not records missing the URL entirely), so the raise is a hard signal of an unusual Takeout shape rather than expected runtime behaviour.
+
+## Default output directory
+
+[[src/youtubebrain/ingest.py#MARKDOWN_RAW_DIR]] is the repo-root-relative `Markdown/raw` folder.
+
+`write_markdown` creates the directory (and any missing parents) on first call via `mkdir(parents=True, exist_ok=True)`, so a fresh checkout works without manual setup. The folder is checked in with a `.gitkeep` placeholder.
+
 ## Tests
 
 Loader behaviour is verified by `tests/test_ingest.py` using inline JSON fixtures in `tmp_path`; no dependency on the gitignored `./Takeout/` export.
@@ -62,26 +99,62 @@ Records missing titleUrl, subtitles or description still parse — these fields 
 
 Unknown JSON keys raise ValidationError to surface schema drift, per `extra="forbid"` on WatchedVideo.
 
-### main prints titles
-
-Calling `main()` against a monkeypatched watch-history.json prints every video title to stdout, one per line.
-
 ### Filters unresolved titles
 
 `load_watch_history` drops records whose `title` equals `Watched <titleUrl>`, leaving only resolvable videos in the returned list.
-
-### main skips unresolved titles
-
-`main()` does not print URL-shaped placeholder titles — only resolvable video titles reach stdout.
 
 ### Filters non-watch entries
 
 `load_watch_history` drops records whose `title` does not start with `Watched `, removing community-post views and other non-watch activity from the returned list.
 
-### main skips non-watch entries
-
-`main()` does not print non-watch activity titles — only video-watch titles reach stdout.
-
 ### Default path constant
 
 `WATCH_HISTORY_PATH` equals the repo-root-relative Takeout export path.
+
+### Video ID extraction
+
+`_video_id` returns the `v` query parameter from a standard watch URL.
+
+### Video ID raises without v param
+
+`_video_id` raises `ValueError` on URLs lacking a `v` query parameter, such as `/post/<id>` community-post URLs.
+
+### Render markdown fields
+
+`_render_markdown` output includes the title, titleUrl, channel name and url, and the ISO-formatted time.
+
+### Render multiple channels
+
+A record with multiple subtitles renders each channel as its own markdown bullet under the Channels heading.
+
+### Render empty subtitles
+
+An empty subtitles list renders a `_(none)_` placeholder under the Channels heading so the section is never absent.
+
+### Write markdown creates file
+
+`write_markdown` writes a file named `<video_id>.md` in the output directory and returns its path.
+
+### Write markdown overwrites
+
+A second `write_markdown` call replaces an existing file's contents, so re-ingesting against an updated export is idempotent.
+
+### Write markdown requires title URL
+
+`write_markdown` raises `ValueError` when the record has no `title_url`, since there is no video ID to use as the filename.
+
+### main writes files
+
+Calling `main()` against a monkeypatched watch-history.json and output directory writes one `<video_id>.md` file per kept video and prints nothing to stdout.
+
+### main skips unresolved
+
+`main()` does not write a file for unresolved (URL-placeholder) records.
+
+### main skips non-watch
+
+`main()` does not write a file for non-watch activity such as community-post views.
+
+### Default output directory
+
+`MARKDOWN_RAW_DIR` equals the repo-root-relative `Markdown/raw` folder.
