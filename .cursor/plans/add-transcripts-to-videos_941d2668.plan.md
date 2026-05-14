@@ -4,25 +4,25 @@ overview: Add a SQLite-backed transcript fetcher with a youtube-transcript-api -
 todos:
   - id: deps
     content: Add youtube-transcript-api, pytubefix, yt-dlp to pyproject.toml dependencies
-    status: pending
+    status: completed
   - id: module
     content: Create src/youtubebrain/transcripts.py with init_db, enqueue, fetch_transcripts, load_transcripts and the 3-step fallback chain
-    status: pending
+    status: completed
   - id: pacing
     content: Implement single-worker loop with random jitter, exponential backoff, 5-attempt cap, and WAL-mode SQLite
-    status: pending
+    status: completed
   - id: cli
     content: Add `transcripts` console script in pyproject.toml that loads Takeout IDs, enqueues, and runs the fetch loop
-    status: pending
+    status: completed
   - id: render
     content: Extend _render_markdown / write_markdown / main in ingest.py to accept and render a Transcript section
-    status: pending
+    status: completed
   - id: tests
     content: Add tests/test_transcripts.py covering schema, all status branches, fallback fall-through, and backoff abort
-    status: pending
+    status: completed
   - id: lat
     content: Author lat.md/transcripts.md, update lat.md/lat.md and lat.md/ingest.md, run `lat check` to validate
-    status: pending
+    status: completed
 isProject: false
 ---
 

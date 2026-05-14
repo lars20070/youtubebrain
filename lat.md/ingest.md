@@ -16,7 +16,7 @@ Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and
 
 [[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array, validates it as `list[WatchedVideo]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning.
 
-Running the module fetches descriptions via [[descriptions#API client]] and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
+Running the module fetches descriptions via [[descriptions#API client]], reads any cached transcripts via [[transcripts#Read API]], and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
 
 ## Non-watch activity filtering
 
@@ -51,6 +51,8 @@ A URL without a `v` parameter (e.g. a community-post URL of the form `/post/<id>
 ## Markdown writer
 
 [[src/youtubebrain/ingest.py#write_markdown]] writes a markdown file for one `WatchedVideo` into the configured output directory, named `<video_id>.md` where the ID comes from [[ingest#Video ID extraction]]. The body is produced by [[src/youtubebrain/ingest.py#_render_markdown]].
+
+Descriptions come from [[descriptions#API client]]; plain transcript text (when present) comes from [[transcripts#Read API]] and is rendered under a `## Transcript` heading after `## Description`.
 
 File layout:
 

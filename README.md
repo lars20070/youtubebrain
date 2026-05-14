@@ -11,3 +11,9 @@ The ingest step reads `Takeout/YouTube and YouTube Music/history/watch-history.j
 3. Click **Multiple formats** and set **History** to **JSON**.
 4. Submit the export, wait for the email (~20 minutes), and download the ZIP.
 5. Unzip it and copy the `Takeout/` folder into the root of this repo. The final path must be `Takeout/YouTube and YouTube Music/history/watch-history.json`.
+
+### Ingest and transcripts
+
+- `uv run ingest` — fetches video descriptions (YouTube Data API) and writes `Markdown/raw/<video_id>.md`, including any transcripts already in `Markdown/.cache/transcripts.sqlite`.
+- `uv run transcripts` — long-running caption fetch (throttled, resumable) into that SQLite DB; re-run `uv run ingest` afterward to fold new text into the markdown files.
+- If the fetcher marks rows `blocked` after IP throttling, set those rows back to `pending` or `error` in SQLite (or delete them) before the next `uv run transcripts` so they are retried.

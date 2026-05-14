@@ -73,6 +73,11 @@ def _stub_fetch_descriptions(descriptions: dict[str, str | None]):  # noqa: ANN2
     return _stub
 
 
+def _stub_load_transcripts_none(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+    """Return no transcript text (read from DB would be empty in tests)."""
+    return dict.fromkeys(dict.fromkeys(video_ids), None)
+
+
 # @lat: [[ingest#Tests#Parses valid record]]
 def test_parses_valid_record(tmp_path: Path) -> None:
     """A minimal valid JSON array round-trips into list[WatchedVideo]."""
@@ -164,6 +169,8 @@ def test_render_markdown_contains_all_fields() -> None:
     assert "2026-05-07T08:39:47.023000+00:00" in body
     assert "## Description" in body
     assert "A short clip about something." in body
+    assert "## Transcript" in body
+    assert "## Transcript" in body
 
 
 # @lat: [[ingest#Tests#Render unavailable description]]
@@ -173,6 +180,7 @@ def test_render_markdown_unavailable_description() -> None:
     body = _render_markdown(video, description=None)
     assert "## Description" in body
     assert "_(unavailable)_" in body
+    assert "## Transcript" in body
 
 
 # @lat: [[ingest#Tests#Render multiple channels]]
@@ -187,6 +195,7 @@ def test_render_markdown_lists_multiple_channels() -> None:
     body = _render_markdown(video)
     assert "- [Channel One](https://www.youtube.com/channel/UC1)" in body
     assert "- [Channel Two](https://www.youtube.com/channel/UC2)" in body
+    assert "## Transcript" in body
 
 
 # @lat: [[ingest#Tests#Render empty subtitles]]
@@ -196,6 +205,7 @@ def test_render_markdown_empty_subtitles() -> None:
     body = _render_markdown(video)
     assert "## Channels" in body
     assert "_(none)_" in body
+    assert "## Transcript" in body
 
 
 # @lat: [[ingest#Tests#Render strips watched prefix]]
@@ -205,6 +215,7 @@ def test_render_markdown_strips_watched_prefix() -> None:
     body = _render_markdown(video)
     assert "- Title: Some Cool Video" in body
     assert "- Title: Watched Some Cool Video" not in body
+    assert "## Transcript" in body
 
 
 # @lat: [[ingest#Tests#Write markdown creates file]]
@@ -217,6 +228,7 @@ def test_write_markdown_creates_named_file(tmp_path: Path) -> None:
     content = path.read_text()
     assert "- Title: Test Video" in content
     assert "hello world" in content
+    assert "## Transcript" in content
 
 
 # @lat: [[ingest#Tests#Write markdown overwrites]]
@@ -260,6 +272,7 @@ def test_main_writes_files(
         "fetch_descriptions",
         _stub_fetch_descriptions({"abc123": "first desc", "JWWDqbcQoXA": "second desc"}),
     )
+    monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     main()
     assert capsys.readouterr().out == ""
     assert (out_dir / "abc123.md").exists()
@@ -279,6 +292,7 @@ def test_main_skips_unresolved(
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
+    monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]
@@ -295,6 +309,7 @@ def test_main_skips_non_watch(
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
+    monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]

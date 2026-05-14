@@ -2,3 +2,4 @@ This directory defines the high-level concepts, business logic, and architecture
 
 - [[ingest]] — Ingest YouTube history data from Google Takeout
 - [[descriptions]] — Fetch and cache YouTube video descriptions via the Data API v3
+- [[transcripts]] — Fetch and cache captions with a resumable SQLite-backed pipeline

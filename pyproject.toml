@@ -12,6 +12,10 @@ dependencies = [
   "tavily-python>=0.5.1",
   "pydantic>=2.10.6",
   "pypandoc>=1.15",
+  "pytubefix>=10.6",
+  "requests>=2.32",
+  "youtube-transcript-api>=1.2.4",
+  "yt-dlp>=2026.1",
 ]
 
 [dependency-groups]
@@ -27,6 +31,7 @@ dev = [
 
 [project.scripts]
 ingest = "youtubebrain.ingest:main"
+transcripts = "youtubebrain.transcripts:main"
 
 [tool.uv]
 package = true
