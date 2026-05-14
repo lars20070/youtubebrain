@@ -11,10 +11,10 @@ jobs:
   ci:
     strategy:
       matrix:
-        python-version: [ "3.11" ]
-        uv-version: [ "latest" ]
+        python-version: ["3.11"]
+        uv-version: ["latest"]
         # Only run CI on Linux. Windows and macOS cost 2x and 10x more respectively.
-        os: [ ubuntu-latest ]
+        os: [ubuntu-latest]
         # os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
@@ -61,5 +61,3 @@ jobs:
         with:
           name: youtubebrain-pytest-logs
           path: youtubebrain.log
-      - name: Run script with minimal example
-        run: uv run minimalexample
