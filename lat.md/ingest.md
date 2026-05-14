@@ -14,9 +14,9 @@ Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and
 
 ## Loader
 
-[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array from the repo-root-relative path, validates it with a pydantic `TypeAdapter[list[WatchedVideo]]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning. Running the module writes one markdown file per kept video to [[ingest#Default output directory]].
+[[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array, validates it as `list[WatchedVideo]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning.
 
-Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
+Running the module fetches descriptions via [[descriptions#API client]] and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
 
 ## Non-watch activity filtering
 
@@ -65,11 +65,15 @@ File layout:
 
 - [{name}]({url})
 - ...
+
+## Description
+
+{description}
 ```
 
 The leading `Watched ` substring is stripped from the title before rendering — every kept record carries that prefix by construction of [[ingest#Non-watch activity filtering]], so the boilerplate adds no signal and dropping it keeps titles readable.
 
-Multiple subtitles are rendered as separate bullets. An empty subtitles list renders `_(none)_` under the Channels heading so the section is never absent.
+Multiple subtitles are rendered as separate bullets. An empty subtitles list renders `_(none)_` under the Channels heading so the section is never absent. A `None` description (video deleted or otherwise unavailable per [[descriptions#Missing videos]]) renders the `_(unavailable)_` placeholder under the Description heading.
 
 Writes are idempotent: a second call overwrites the file in place, so re-running `uv run ingest` against an updated Takeout export refreshes existing files without leaving stale duplicates.
 
@@ -136,6 +140,10 @@ An empty subtitles list renders a `_(none)_` placeholder under the Channels head
 ### Render strips watched prefix
 
 The `Watched ` prefix from Takeout titles is removed before the title is written to the markdown file.
+
+### Render unavailable description
+
+A `None` description argument renders the `_(unavailable)_` placeholder under the Description heading.
 
 ### Write markdown creates file
 

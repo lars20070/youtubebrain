@@ -64,6 +64,15 @@ def _build_video(**overrides: object) -> WatchedVideo:
     return TypeAdapter(WatchedVideo).validate_python(record)
 
 
+def _stub_fetch_descriptions(descriptions: dict[str, str | None]):  # noqa: ANN202
+    """Build an async stub for ingest.fetch_descriptions that returns a fixed mapping."""
+
+    async def _stub(video_ids: list[str], cache_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+        return {vid: descriptions.get(vid) for vid in video_ids}
+
+    return _stub
+
+
 # @lat: [[ingest#Tests#Parses valid record]]
 def test_parses_valid_record(tmp_path: Path) -> None:
     """A minimal valid JSON array round-trips into list[WatchedVideo]."""
@@ -144,15 +153,26 @@ def test_video_id_raises_without_v_param() -> None:
 
 # @lat: [[ingest#Tests#Render markdown fields]]
 def test_render_markdown_contains_all_fields() -> None:
-    """Rendered markdown includes title, titleUrl, channel name+url and ISO time."""
+    """Rendered markdown includes title, titleUrl, channel name+url, ISO time and description."""
     video = _build_video()
-    body = _render_markdown(video)
+    body = _render_markdown(video, description="A short clip about something.")
     assert "## Video" in body
     assert "- Title: Test Video" in body
     assert "https://www.youtube.com/watch?v=abc123" in body
     assert "Test Channel" in body
     assert "https://www.youtube.com/channel/UCxxx" in body
     assert "2026-05-07T08:39:47.023000+00:00" in body
+    assert "## Description" in body
+    assert "A short clip about something." in body
+
+
+# @lat: [[ingest#Tests#Render unavailable description]]
+def test_render_markdown_unavailable_description() -> None:
+    """A None description renders the _(unavailable)_ placeholder under the Description heading."""
+    video = _build_video()
+    body = _render_markdown(video, description=None)
+    assert "## Description" in body
+    assert "_(unavailable)_" in body
 
 
 # @lat: [[ingest#Tests#Render multiple channels]]
@@ -189,12 +209,14 @@ def test_render_markdown_strips_watched_prefix() -> None:
 
 # @lat: [[ingest#Tests#Write markdown creates file]]
 def test_write_markdown_creates_named_file(tmp_path: Path) -> None:
-    """write_markdown writes a file named <video_id>.md in out_dir."""
+    """write_markdown writes a file named <video_id>.md in out_dir including any description."""
     video = _build_video(titleUrl="https://www.youtube.com/watch?v=JWWDqbcQoXA")
-    path = write_markdown(video, tmp_path)
+    path = write_markdown(video, tmp_path, description="hello world")
     assert path == tmp_path / "JWWDqbcQoXA.md"
     assert path.exists()
-    assert "- Title: Test Video" in path.read_text()
+    content = path.read_text()
+    assert "- Title: Test Video" in content
+    assert "hello world" in content
 
 
 # @lat: [[ingest#Tests#Write markdown overwrites]]
@@ -233,10 +255,17 @@ def test_main_writes_files(
     out_dir = tmp_path / "out"
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(
+        ingest,
+        "fetch_descriptions",
+        _stub_fetch_descriptions({"abc123": "first desc", "JWWDqbcQoXA": "second desc"}),
+    )
     main()
     assert capsys.readouterr().out == ""
     assert (out_dir / "abc123.md").exists()
     assert (out_dir / "JWWDqbcQoXA.md").exists()
+    assert "first desc" in (out_dir / "abc123.md").read_text()
+    assert "second desc" in (out_dir / "JWWDqbcQoXA.md").read_text()
 
 
 # @lat: [[ingest#Tests#main skips unresolved]]
@@ -249,6 +278,7 @@ def test_main_skips_unresolved(
     out_dir = tmp_path / "out"
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]
@@ -264,6 +294,7 @@ def test_main_skips_non_watch(
     out_dir = tmp_path / "out"
     monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]
