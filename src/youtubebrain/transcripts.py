@@ -419,7 +419,12 @@ def fetch_transcripts(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
                     (status, lang, text, raw_json, is_gen, err, source, video_id),
                 )
                 con.commit()
-                logger.info(f"Transcript {video_id}: {status}")
+                counts = con.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0), COUNT(*) FROM transcripts",
+                ).fetchone()
+                n_ok, n_total = int(counts[0]), int(counts[1])
+                pct = 100.0 * n_ok / n_total if n_total else 0.0
+                logger.info(f"Transcript {video_id}: {status} ({n_ok}/{n_total} transcribed, {pct:.1f}%)")
                 if status == "ok":
                     ok_since_long_pause += 1
                     if ok_since_long_pause > 0 and ok_since_long_pause % 500 == 0:
