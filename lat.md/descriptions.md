@@ -30,6 +30,14 @@ Causes: deleted, private, age-restricted, region-blocked, or terminated-channel 
 
 A yt-dlp fallback for these videos is intentionally deferred — for a 10 K-video personal archive the API alone covers 85–95 % of records, and yt-dlp adds bot-detection risk and a heavyweight dependency for marginal gain.
 
+## API failures
+
+HTTP errors (4xx/5xx) and network failures (timeouts, connect errors) from `_fetch_batch` are caught per batch in [[src/youtubebrain/descriptions.py#fetch_descriptions]] and logged at warning level. The failed batch's IDs are **not** written to the cache, so a subsequent run retries them.
+
+The caller still receives a complete `{video_id: description_or_None}` mapping — IDs from failed batches surface as `None` because `cache.get(vid)` returns `None` when the key is absent. Downstream [[ingest#Markdown writer]] therefore writes `_(unavailable)_` rather than crashing the run.
+
+This is distinct from [[descriptions#Missing videos]]: a cached `null` means "API confirmed the video does not exist" and is never retried; an absent cache entry after a failed call means "we could not ask the API this run" and will retry next time.
+
 ## API key requirement
 
 [[src/youtubebrain/descriptions.py#_get_api_key]] reads `API_KEY_YOUTUBE` from the environment after `load_dotenv()`, raising `RuntimeError` if unset.
@@ -55,6 +63,16 @@ When the API returns only a subset of the requested IDs, the missing ones are wr
 ### Persists cache per batch
 
 If a later batch errors, the cache file still contains every ID from earlier successful batches — the fetcher writes after each batch, so restarts resume rather than re-fetch.
+
+The failed batch's IDs are returned as `None` to the caller and stay absent from the cache.
+
+### Handles API failure
+
+A single-batch HTTP 500 response returns `None` for every requested ID, writes nothing to the cache, and does not raise — the caller can keep going.
+
+### Handles network error
+
+A `httpx.ConnectError` from the API call returns `None` for every requested ID, writes nothing to the cache, and does not raise.
 
 ### Raises without API key
 

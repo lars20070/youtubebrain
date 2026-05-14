@@ -76,13 +76,20 @@ async def fetch_descriptions(
     cached_count = len(unique_ids) - len(missing)
     logger.info(f"Descriptions: {cached_count} cached, {len(missing)} to fetch.")
 
+    failed_count = 0
     if missing:
         api_key = _get_api_key()
         batches = list(_chunks(missing))
         logger.info(f"Fetching {len(missing)} descriptions in {len(batches)} batch(es).")
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             for i, batch in enumerate(batches, start=1):
-                fetched = await _fetch_batch(client, batch, api_key)
+                try:
+                    fetched = await _fetch_batch(client, batch, api_key)
+                except httpx.HTTPError as e:
+                    # @lat: [[descriptions#API failures]]
+                    failed_count += len(batch)
+                    logger.warning(f"Batch {i}/{len(batches)} failed ({len(batch)} ids, will retry next run): {e!r}")
+                    continue
                 for vid in batch:
                     # @lat: [[descriptions#Missing videos]]
                     cache[vid] = fetched.get(vid)
@@ -91,5 +98,7 @@ async def fetch_descriptions(
 
     result = {vid: cache.get(vid) for vid in unique_ids}
     available = sum(1 for v in result.values() if v is not None)
-    logger.info(f"Descriptions ready: {available} available, {len(result) - available} unavailable.")
+    logger.info(
+        f"Descriptions ready: {available} available, {len(result) - available} unavailable ({failed_count} failed, will retry next run).",
+    )
     return result

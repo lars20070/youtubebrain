@@ -71,7 +71,7 @@ async def test_fetch_descriptions_stores_none_for_missing(tmp_path: Path) -> Non
 # @lat: [[descriptions#Tests#Persists cache per batch]]
 @pytest.mark.asyncio
 async def test_fetch_descriptions_writes_cache_after_each_batch(tmp_path: Path) -> None:
-    """The cache file contains the first batch even if a later batch fails."""
+    """A failed second batch leaves first-batch entries cached and returns None for the failed ids."""
     cache_path = tmp_path / "descriptions.json"
     ids = [f"id{i:03d}" for i in range(60)]
     responses = [
@@ -80,12 +80,38 @@ async def test_fetch_descriptions_writes_cache_after_each_batch(tmp_path: Path) 
     ]
     with respx.mock() as router:
         router.get(YOUTUBE_API_URL).mock(side_effect=responses)
-        with pytest.raises(httpx.HTTPStatusError):
-            await fetch_descriptions(ids, cache_path)
+        result = await fetch_descriptions(ids, cache_path)
     cache = json.loads(cache_path.read_text())
     assert cache["id000"] == "desc-id000"
     assert cache["id049"] == "desc-id049"
     assert "id050" not in cache
+    assert result["id049"] == "desc-id049"
+    assert result["id050"] is None
+    assert result["id059"] is None
+
+
+# @lat: [[descriptions#Tests#Handles API failure]]
+@pytest.mark.asyncio
+async def test_fetch_descriptions_handles_api_failure(tmp_path: Path) -> None:
+    """An HTTP 500 from the API returns None for every id and does not raise."""
+    cache_path = tmp_path / "descriptions.json"
+    with respx.mock() as router:
+        router.get(YOUTUBE_API_URL).mock(return_value=httpx.Response(500, json={"error": "boom"}))
+        result = await fetch_descriptions(["a", "b"], cache_path)
+    assert result == {"a": None, "b": None}
+    assert not cache_path.exists()
+
+
+# @lat: [[descriptions#Tests#Handles network error]]
+@pytest.mark.asyncio
+async def test_fetch_descriptions_handles_network_error(tmp_path: Path) -> None:
+    """A connect error returns None for every id and does not raise."""
+    cache_path = tmp_path / "descriptions.json"
+    with respx.mock() as router:
+        router.get(YOUTUBE_API_URL).mock(side_effect=httpx.ConnectError("offline"))
+        result = await fetch_descriptions(["a", "b"], cache_path)
+    assert result == {"a": None, "b": None}
+    assert not cache_path.exists()
 
 
 # @lat: [[descriptions#Tests#Raises without API key]]
