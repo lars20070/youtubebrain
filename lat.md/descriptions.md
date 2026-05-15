@@ -20,7 +20,9 @@ A JSON object keyed by video ID with description (or `null`) as the value, persi
 
 [[src/youtubebrain/descriptions.py#DESCRIPTIONS_CACHE_PATH]] points at the file. [[src/youtubebrain/descriptions.py#_load_cache]] returns an empty dict when it is missing; [[src/youtubebrain/descriptions.py#_save_cache]] pretty-prints with sorted keys for diff-friendliness and creates the parent directory on demand.
 
-The cache is written after every batch, so a partial run that fails on batch N still preserves batches 1 through N-1 — restarting the pipeline picks up from where it stopped. The folder is gitignored.
+Both reads and writes use explicit UTF-8 encoding so emoji and non-Latin titles round-trip cleanly. Writes are atomic: the payload is serialized with `ensure_ascii=False`, written to a `.tmp` sibling, fsynced, and `os.replace`d into place, so an interrupted run cannot leave a half-written cache. The folder is gitignored.
+
+The cache is written after every batch, so a partial run that fails on batch N still preserves batches 1 through N-1 — restarting the pipeline picks up from where it stopped.
 
 ## Missing videos
 

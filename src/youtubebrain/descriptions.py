@@ -22,14 +22,27 @@ def _load_cache(path: Path) -> dict[str, str | None]:
     """Read the JSON cache from disk, returning an empty dict if absent."""
     if not path.exists():
         return {}
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # @lat: [[descriptions#Cache]]
 def _save_cache(path: Path, cache: dict[str, str | None]) -> None:
-    """Persist the cache to disk, ensuring the parent directory exists."""
+    """Persist the cache to disk atomically, ensuring the parent directory exists."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cache, indent=2, sort_keys=True))
+    payload = json.dumps(cache, indent=2, sort_keys=True, ensure_ascii=False)
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        fh.write(payload)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, path)
+    dir_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
 
 
 # @lat: [[descriptions#API key requirement]]
