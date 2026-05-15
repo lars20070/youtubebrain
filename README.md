@@ -4,7 +4,7 @@ YouTubeBrain generates a markdown knowledge base from your watched YouTube video
 
 ### Exporting your watch history
 
-The ingest step reads `Takeout/YouTube and YouTube Music/history/watch-history.json` at the repo root. To produce it:
+The steps below read `Takeout/YouTube and YouTube Music/history/watch-history.json` at the repo root. To produce it:
 
 1. Open [takeout.google.com](https://takeout.google.com) and click **Deselect all**.
 2. Select **YouTube and YouTube Music** → **All YouTube data included** → **Deselect all** → enable only **history**.
