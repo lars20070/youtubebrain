@@ -73,8 +73,7 @@ def _inter_video_sleep_window() -> tuple[float, float]:
         sleep_max = float(raw_max)
     except ValueError:
         logger.warning(
-            f"Invalid {_SLEEP_MIN_ENV}={raw_min!r} or {_SLEEP_MAX_ENV}={raw_max!r}; "
-            f"using defaults ({_DEFAULT_SLEEP_MIN}, {_DEFAULT_SLEEP_MAX}).",
+            f"Invalid {_SLEEP_MIN_ENV}={raw_min!r} or {_SLEEP_MAX_ENV}={raw_max!r}; using defaults ({_DEFAULT_SLEEP_MIN}, {_DEFAULT_SLEEP_MAX}).",
         )
         return (_DEFAULT_SLEEP_MIN, _DEFAULT_SLEEP_MAX)
     if sleep_min < 0 or sleep_max < sleep_min:
