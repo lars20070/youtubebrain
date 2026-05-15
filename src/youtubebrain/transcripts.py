@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import shutil
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 import requests
+from dotenv import load_dotenv
 from pytubefix import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
@@ -45,6 +47,10 @@ BACKOFFS: tuple[int, ...] = (300, 900, 2700, 7200)
 _MAX_ATTEMPTS = 5
 _SESSION_RECYCLE_EVERY = 300
 _CONSECUTIVE_BLOCKS_ABORT = len(BACKOFFS)
+_DEFAULT_SLEEP_MIN = 3.0
+_DEFAULT_SLEEP_MAX = 7.0
+_SLEEP_MIN_ENV = "TRANSCRIPTS_SLEEP_MIN"
+_SLEEP_MAX_ENV = "TRANSCRIPTS_SLEEP_MAX"
 
 
 class BlockedError(Exception):
@@ -54,6 +60,30 @@ class BlockedError(Exception):
 def _sleep(seconds: float) -> None:
     """Sleep helper so tests can monkeypatch pacing."""
     time.sleep(seconds)
+
+
+# @lat: [[transcripts#Pacing configuration]]
+def _inter_video_sleep_window() -> tuple[float, float]:
+    """Return (min, max) seconds for inter-video pacing from env or defaults."""
+    load_dotenv()
+    raw_min = os.environ.get(_SLEEP_MIN_ENV, str(_DEFAULT_SLEEP_MIN))
+    raw_max = os.environ.get(_SLEEP_MAX_ENV, str(_DEFAULT_SLEEP_MAX))
+    try:
+        sleep_min = float(raw_min)
+        sleep_max = float(raw_max)
+    except ValueError:
+        logger.warning(
+            f"Invalid {_SLEEP_MIN_ENV}={raw_min!r} or {_SLEEP_MAX_ENV}={raw_max!r}; "
+            f"using defaults ({_DEFAULT_SLEEP_MIN}, {_DEFAULT_SLEEP_MAX}).",
+        )
+        return (_DEFAULT_SLEEP_MIN, _DEFAULT_SLEEP_MAX)
+    if sleep_min < 0 or sleep_max < sleep_min:
+        logger.warning(
+            f"Invalid sleep window ({sleep_min}, {sleep_max}); "
+            f"require min >= 0 and max >= min; using defaults ({_DEFAULT_SLEEP_MIN}, {_DEFAULT_SLEEP_MAX}).",
+        )
+        return (_DEFAULT_SLEEP_MIN, _DEFAULT_SLEEP_MAX)
+    return (sleep_min, sleep_max)
 
 
 def _build_yta_session() -> requests.Session:
@@ -384,6 +414,7 @@ def load_transcripts(video_ids: list[str], db_path: Path = TRANSCRIPTS_DB_PATH) 
 def fetch_transcripts(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
     """Process pending/blocked/error rows with pacing until none remain or consecutive blocks abort."""
     init_db(db_path)
+    sleep_min, sleep_max = _inter_video_sleep_window()
     yta_state = _YtaSessionState()
     consecutive_blocks = 0
     ok_since_long_pause = 0
@@ -434,7 +465,7 @@ def fetch_transcripts(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
                     ok_since_long_pause += 1
                     if ok_since_long_pause > 0 and ok_since_long_pause % 500 == 0:
                         _sleep(random.uniform(60, 120))
-                _sleep(random.uniform(3, 7))
+                _sleep(random.uniform(sleep_min, sleep_max))
             except BlockedError as e:
                 consecutive_blocks += 1
                 con.execute(

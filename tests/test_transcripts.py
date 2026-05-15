@@ -12,6 +12,9 @@ from youtubebrain.ingest import _render_markdown, main
 from youtubebrain.models import WatchedVideo
 from youtubebrain.transcripts import (
     BlockedError,
+    _DEFAULT_SLEEP_MAX,
+    _DEFAULT_SLEEP_MIN,
+    _inter_video_sleep_window,
     _json3_file_to_text,
     _ResolvedOk,
     enqueue,
@@ -259,6 +262,51 @@ def test_pytubefix_after_ytdlp_fallback(monkeypatch: pytest.MonkeyPatch) -> None
     st, *_rest = resolve_transcript("z")
     assert st == "ok"
     assert order == ["yta", "ytdlp", "pytubefix"]
+
+
+# @lat: [[transcripts#Tests#Sleep window uses env values]]
+def test_sleep_window_uses_env_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Valid TRANSCRIPTS_SLEEP_MIN/MAX are used for inter-video pacing."""
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MIN", "1.0")
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MAX", "2.0")
+    assert _inter_video_sleep_window() == (1.0, 2.0)
+
+    db = tmp_path / "t.sqlite"
+    init_db(db)
+    con = sqlite3.connect(db)
+    try:
+        con.execute("INSERT INTO transcripts (video_id, status) VALUES ('vid1', 'pending')")
+        con.commit()
+    finally:
+        con.close()
+
+    def fake_resolve(vid: str, state: object) -> tuple:  # noqa: ANN401, ARG001
+        return ("ok", "en", "one", "[]", 0, None, "yta")
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("youtubebrain.transcripts._resolve_with_fallbacks", fake_resolve)
+    monkeypatch.setattr("youtubebrain.transcripts._sleep", lambda s: sleeps.append(float(s)))
+
+    fetch_transcripts(db)
+
+    assert len(sleeps) == 1
+    assert 1.0 <= sleeps[0] <= 2.0
+
+
+# @lat: [[transcripts#Tests#Sleep window falls back on invalid env]]
+def test_sleep_window_falls_back_on_invalid_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-numeric env values fall back to the default sleep window."""
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MIN", "abc")
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MAX", "xyz")
+    assert _inter_video_sleep_window() == (_DEFAULT_SLEEP_MIN, _DEFAULT_SLEEP_MAX)
+
+
+# @lat: [[transcripts#Tests#Sleep window falls back when min greater than max]]
+def test_sleep_window_falls_back_when_min_gt_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When min exceeds max, the helper returns the default sleep window."""
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MIN", "10")
+    monkeypatch.setenv("TRANSCRIPTS_SLEEP_MAX", "5")
+    assert _inter_video_sleep_window() == (_DEFAULT_SLEEP_MIN, _DEFAULT_SLEEP_MAX)
 
 
 # @lat: [[transcripts#Tests#Attempts cap at five]]

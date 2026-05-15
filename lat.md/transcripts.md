@@ -53,9 +53,15 @@ If the database file is missing, every requested id maps to `None`. Otherwise id
 
 Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Terminal rows (`ok`, `no_captions`, `unavailable`, `age_restricted`) never match again. **`blocked` is intentionally omitted** so a throttled IP does not immediately re-hit the same id; after cooldown, set `blocked` rows back to `pending` or `error` (or delete them) to retry. This differs from the original design sketch that included `blocked` in the `IN` list; the implementation favours not burning attempts on the same row while the IP is still hot.
 
-On success, `_resolve_with_fallbacks` returns seven fields; the updater writes `status`, `language`, `text`, `raw_json`, `is_generated`, `error_message`, `source`, bumps `attempts`, and timestamps, then commits every row. Each iteration logs the video id and status plus `COUNT(status='ok')`, total rows, and percent complete from a single aggregate query on `transcripts`. After each `ok`, a counter drives an extra `random.uniform(60, 120)` second pause every 500 successes. Every completed iteration (success or terminal failure) sleeps `random.uniform(3, 7)` seconds via [[src/youtubebrain/transcripts.py#_sleep]] (monkeypatched in tests).
+On success, `_resolve_with_fallbacks` returns seven fields; the updater writes `status`, `language`, `text`, `raw_json`, `is_generated`, `error_message`, `source`, bumps `attempts`, and timestamps, then commits every row. Each iteration logs the video id and status plus `COUNT(status='ok')`, total rows, and percent complete from a single aggregate query on `transcripts`. After each `ok`, a counter drives an extra `random.uniform(60, 120)` second pause every 500 successes. Every completed iteration (success or terminal failure) sleeps `random.uniform(min, max)` seconds via [[src/youtubebrain/transcripts.py#_sleep]], where `(min, max)` comes from [[src/youtubebrain/transcripts.py#_inter_video_sleep_window]] (defaults 3 and 7; monkeypatched in tests).
 
 On `BlockedError` from [[src/youtubebrain/transcripts.py#fetch_transcripts]], the row is set to `blocked`, `attempts` increments, and the process sleeps `BACKOFFS[consecutive_blocks - 1]` seconds (300, 900, 2700, 7200). After four consecutive blocks across iterations, the loop logs and stops so you can resume later without hammering YouTube.
+
+## Pacing configuration
+
+[[src/youtubebrain/transcripts.py#_inter_video_sleep_window]] reads `TRANSCRIPTS_SLEEP_MIN` and `TRANSCRIPTS_SLEEP_MAX` from `.env` at fetch start. Defaults are 3.0 and 7.0 seconds.
+
+Values must be numeric with `min >= 0` and `max >= min`; otherwise a warning is logged and the defaults are used.
 
 ## Fallback chain
 
@@ -120,6 +126,18 @@ When yt-dlp returns `fallback`, the pytubefix mock runs third.
 ### Attempts cap at five
 
 Rows already at five attempts are never passed to the resolver again.
+
+### Sleep window uses env values
+
+Valid `TRANSCRIPTS_SLEEP_MIN` and `TRANSCRIPTS_SLEEP_MAX` env vars are returned by the helper and used for inter-video sleep in the fetch loop.
+
+### Sleep window falls back on invalid env
+
+Non-numeric env values cause the helper to return the default (3.0, 7.0) window.
+
+### Sleep window falls back when min greater than max
+
+When min exceeds max, the helper logs a warning and returns the default window.
 
 ### Ingest markdown Transcript section
 
