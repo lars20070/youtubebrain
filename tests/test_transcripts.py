@@ -11,9 +11,9 @@ from youtubebrain import ingest
 from youtubebrain.ingest import _render_markdown, main
 from youtubebrain.models import WatchedVideo
 from youtubebrain.transcripts import (
-    BlockedError,
     _DEFAULT_SLEEP_MAX,
     _DEFAULT_SLEEP_MIN,
+    BlockedError,
     _inter_video_sleep_window,
     _json3_file_to_text,
     _ResolvedOk,
