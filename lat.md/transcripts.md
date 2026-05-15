@@ -67,7 +67,7 @@ Values must be numeric with `min >= 0` and `max >= min`; otherwise a warning is 
 
 Resolution is implemented by [[src/youtubebrain/transcripts.py#_resolve_with_fallbacks]] (and exposed for tests as [[src/youtubebrain/transcripts.py#resolve_transcript]]). It always tries the primary API first, then conditionally heavier paths.
 
-**Primary — [[src/youtubebrain/transcripts.py#_try_yta]].** Builds a `YouTubeTranscriptApi` instance (from the `youtube-transcript-api` package) with a shared [[src/youtubebrain/transcripts.py#_YtaSessionState]] that recreates a `requests.Session` with a random desktop User-Agent from `UA_POOL` every `_SESSION_RECYCLE_EVERY` (300) calls. Calls `fetch` with `LANGS` `en`, `en-US`, `en-GB`, `a.en`. On `NoTranscriptFound`, attempts `list` → `find_transcript` → `translate('en')` → `fetch`. Outcomes: success yields `_ResolvedOk` with `to_raw_data()` JSON and joined plain text via [[src/youtubebrain/transcripts.py#_snippets_to_text]]; `TranscriptsDisabled` or exhausted translation → terminal `no_captions`; `VideoUnavailable` → `unavailable`; `AgeRestricted` or `PoTokenRequired` → `('fallback', 'age'|'pot')` for the next stage; `RequestBlocked` / `IpBlocked` → raise `BlockedError`; other `CouldNotRetrieveTranscript` subclasses → terminal `error` string for retry.
+**Primary — [[src/youtubebrain/transcripts.py#_try_yta]].** Builds a `YouTubeTranscriptApi` instance (from the `youtube-transcript-api` package) with a shared [[src/youtubebrain/transcripts.py#_YtaSessionState]] that recreates a `requests.Session` with a random desktop User-Agent from `UA_POOL` every `_SESSION_RECYCLE_EVERY` (300) calls. Calls `fetch` with `LANGS` `en`, `en-US`, `en-GB`, `a.en`. On `NoTranscriptFound`, attempts `list` → `find_transcript` → `translate('en')` → `fetch`. Outcomes: success yields `_ResolvedOk` with `to_raw_data()` JSON and joined plain text via [[src/youtubebrain/transcripts.py#_snippets_to_text]]; `TranscriptsDisabled` or exhausted translation → terminal `no_captions`; `VideoUnavailable` → `unavailable`; `AgeRestricted` or `PoTokenRequired` → `('fallback', 'age'|'pot')` for the next stage; `RequestBlocked` / `IpBlocked` from **either** the primary `fetch` or the translation chain → raise `BlockedError` (so a hot-IP signal during translation still drives the outer backoff instead of being swallowed as terminal `no_captions`); other `CouldNotRetrieveTranscript` subclasses → terminal `error` string for retry.
 
 **Second — [[src/youtubebrain/transcripts.py#_try_ytdlp]].** Resolves `yt-dlp` on `PATH` with `shutil.which`, writes subtitles under a temp directory, `--sub-format json3/best`, sleeps between requests and subtitle fetches, and `player_client=tv,mweb`. The subprocess call has a 180-second timeout; `TimeoutExpired` returns a terminal-style `('error', 'yt-dlp timed out after 180 seconds')` so the fetch loop never hangs on a stuck child. Parses the first `*.json3` with [[src/youtubebrain/transcripts.py#_json3_file_to_text]]. Stdout/stderr containing `HTTP Error 429` or `Too Many Requests` returns the sentinel `blocked`, which becomes `BlockedError` upstream. Missing or empty JSON3 yields `fallback` so pytubefix can run. A local **bgutil** PO-token provider on `127.0.0.1:4416` is not configured in code; current `yt-dlp` can still pick it up via its own plugin discovery if you run the provider separately.
 
@@ -110,6 +110,10 @@ One `BlockedError` marks `blocked`, increments attempts once, and records the fi
 ### Consecutive blocks abort
 
 Four consecutive blocks across distinct pending rows stop the loop with one row still pending.
+
+### Translation path block raises BlockedError
+
+A `RequestBlocked` raised inside the `NoTranscriptFound` translation chain must surface as `BlockedError` so the outer fetch loop can back off instead of marking the row terminal `no_captions`.
 
 ### PoTokenRequired uses yt-dlp
 

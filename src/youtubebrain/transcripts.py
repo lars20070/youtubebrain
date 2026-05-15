@@ -167,6 +167,8 @@ def _try_yta(  # noqa: PLR0911
                 raw_json=json.dumps(raw),
                 source="yta",
             )
+        except (RequestBlocked, IpBlocked) as e:
+            raise BlockedError(str(e)) from e
         except Exception as e:  # noqa: BLE001
             return ("terminal", "no_captions", str(e))
     except TranscriptsDisabled as e:

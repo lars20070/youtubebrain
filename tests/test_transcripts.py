@@ -10,6 +10,8 @@ from pydantic import TypeAdapter
 from youtubebrain import ingest
 from youtubebrain.ingest import _render_markdown, main
 from youtubebrain.models import WatchedVideo
+from youtube_transcript_api._errors import NoTranscriptFound, RequestBlocked
+
 from youtubebrain.transcripts import (
     _DEFAULT_SLEEP_MAX,
     _DEFAULT_SLEEP_MIN,
@@ -17,6 +19,7 @@ from youtubebrain.transcripts import (
     _inter_video_sleep_window,
     _json3_file_to_text,
     _ResolvedOk,
+    _try_yta,
     enqueue,
     fetch_transcripts,
     init_db,
@@ -192,6 +195,32 @@ def test_consecutive_blocks_abort_run(monkeypatch: pytest.MonkeyPatch, tmp_path:
         assert pending == 1
     finally:
         con.close()
+
+
+# @lat: [[transcripts#Tests#Translation path block raises BlockedError]]
+def test_translation_path_block_raises_blocked_error() -> None:
+    """A block raised by the translated-fetch path becomes BlockedError, not terminal no_captions."""
+
+    class _BlockedTranscript:
+        def translate(self, _lang: str) -> "_BlockedTranscript":
+            return self
+
+        def fetch(self) -> object:
+            raise RequestBlocked("v")
+
+    class _List:
+        def find_transcript(self, _langs: object) -> _BlockedTranscript:
+            return _BlockedTranscript()
+
+    class _Api:
+        def fetch(self, _video_id: str, languages: object = None) -> object:  # noqa: ARG002
+            raise NoTranscriptFound("v", ["en"], None)
+
+        def list(self, _video_id: str) -> _List:
+            return _List()
+
+    with pytest.raises(BlockedError):
+        _try_yta("v", _Api())  # type: ignore[arg-type]
 
 
 # @lat: [[transcripts#Tests#PoTokenRequired uses yt-dlp]]
