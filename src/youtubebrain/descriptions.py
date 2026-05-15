@@ -1,5 +1,6 @@
 """Fetch YouTube video descriptions via the YouTube Data API v3 with on-disk caching."""
 
+import asyncio
 import json
 import os
 from collections.abc import Iterable
@@ -83,7 +84,7 @@ async def fetch_descriptions(
     cache_path: Path = DESCRIPTIONS_CACHE_PATH,
 ) -> dict[str, str | None]:
     """Return {video_id: description_or_None} for every input ID, using the cache to skip prior fetches."""
-    cache = _load_cache(cache_path)
+    cache = await asyncio.to_thread(_load_cache, cache_path)
     unique_ids = list(dict.fromkeys(video_ids))
     missing = [vid for vid in unique_ids if vid not in cache]
     cached_count = len(unique_ids) - len(missing)
@@ -106,7 +107,7 @@ async def fetch_descriptions(
                 for vid in batch:
                     # @lat: [[descriptions#Missing videos]]
                     cache[vid] = fetched.get(vid)
-                _save_cache(cache_path, cache)
+                await asyncio.to_thread(_save_cache, cache_path, cache)
                 logger.info(f"Batch {i}/{len(batches)}: fetched {len(fetched)}/{len(batch)}.")
 
     result = {vid: cache.get(vid) for vid in unique_ids}

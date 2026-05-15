@@ -24,6 +24,8 @@ Both reads and writes use explicit UTF-8 encoding so emoji and non-Latin titles 
 
 The cache is written after every batch, so a partial run that fails on batch N still preserves batches 1 through N-1 — restarting the pipeline picks up from where it stopped.
 
+Because [[src/youtubebrain/descriptions.py#fetch_descriptions]] is async, both the initial cache load and the per-batch writes are dispatched through `asyncio.to_thread` so the `fsync`/`os.replace` work runs on a worker thread instead of blocking the event loop.
+
 ## Missing videos
 
 Videos the API cannot return are cached as `null` and surfaced to the caller as `None`.
