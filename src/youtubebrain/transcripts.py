@@ -158,7 +158,7 @@ def _which_ytdlp() -> str | None:
     return shutil.which("yt-dlp")
 
 
-def _try_ytdlp(video_id: str) -> _ResolvedOk | Literal["fallback"] | tuple[str, str | None] | Literal["blocked"]:
+def _try_ytdlp(video_id: str) -> _ResolvedOk | Literal["fallback"] | tuple[str, str | None] | Literal["blocked"]:  # noqa: PLR0911
     exe = _which_ytdlp()
     if not exe:
         return ("error", "yt-dlp executable not found on PATH")
@@ -184,12 +184,17 @@ def _try_ytdlp(video_id: str) -> _ResolvedOk | Literal["fallback"] | tuple[str, 
             out_tmpl,
             url,
         ]
-        proc = subprocess.run(  # noqa: S603 — argv from template + trusted url
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv from template + trusted url
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error(f"yt-dlp timed out after 180 seconds for video {video_id}")
+            return ("error", "yt-dlp timed out after 180 seconds")
         combined = (proc.stdout or "") + (proc.stderr or "")
         if "HTTP Error 429" in combined or "Too Many Requests" in combined:
             return "blocked"
