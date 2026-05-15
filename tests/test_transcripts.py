@@ -2,16 +2,16 @@
 
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter
+from youtube_transcript_api._errors import NoTranscriptFound, RequestBlocked
 
 from youtubebrain import ingest
 from youtubebrain.ingest import _render_markdown, main
 from youtubebrain.models import WatchedVideo
-from youtube_transcript_api._errors import NoTranscriptFound, RequestBlocked
-
 from youtubebrain.transcripts import (
     _DEFAULT_SLEEP_MAX,
     _DEFAULT_SLEEP_MIN,
@@ -20,6 +20,7 @@ from youtubebrain.transcripts import (
     _json3_file_to_text,
     _ResolvedOk,
     _try_yta,
+    _try_ytdlp,
     enqueue,
     fetch_transcripts,
     init_db,
@@ -260,6 +261,38 @@ def test_json3_to_plain_text(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _json3_file_to_text(p) == "Hello world"
+
+
+# @lat: [[transcripts#Tests#yt-dlp malformed JSON3 falls back]]
+def test_ytdlp_malformed_json3_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A corrupt yt-dlp JSON3 file returns fallback instead of raising out of the fetch loop."""
+    monkeypatch.setattr("youtubebrain.transcripts._which_ytdlp", lambda: "/usr/bin/yt-dlp")
+
+    def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+        out_tmpl = cmd[cmd.index("-o") + 1]
+        tmp_dir = Path(out_tmpl).parent
+        (tmp_dir / "v.en.json3").write_text("{not json", encoding="utf-8")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("youtubebrain.transcripts.subprocess.run", fake_run)
+
+    assert _try_ytdlp("v") == "fallback"
+
+
+# @lat: [[transcripts#Tests#yt-dlp non-dict JSON3 falls back]]
+def test_ytdlp_non_dict_json3_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSON3 whose top level is a list (not dict) returns fallback rather than raising AttributeError."""
+    monkeypatch.setattr("youtubebrain.transcripts._which_ytdlp", lambda: "/usr/bin/yt-dlp")
+
+    def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+        out_tmpl = cmd[cmd.index("-o") + 1]
+        tmp_dir = Path(out_tmpl).parent
+        (tmp_dir / "v.en.json3").write_text("[1, 2, 3]", encoding="utf-8")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("youtubebrain.transcripts.subprocess.run", fake_run)
+
+    assert _try_ytdlp("v") == "fallback"
 
 
 # @lat: [[transcripts#Tests#pytubefix only after yt-dlp fallback]]

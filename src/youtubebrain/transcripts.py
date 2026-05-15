@@ -234,7 +234,11 @@ def _try_ytdlp(video_id: str) -> _ResolvedOk | Literal["fallback"] | tuple[str, 
         json3_files = list(Path(tmp).glob("*.json3"))
         if not json3_files:
             return "fallback"
-        text = _json3_file_to_text(json3_files[0])
+        try:
+            text = _json3_file_to_text(json3_files[0])
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError, TypeError) as e:
+            logger.warning(f"yt-dlp produced unparseable JSON3 for {video_id} ({json3_files[0].name}): {e!r}; falling back to pytubefix")
+            return "fallback"
         if not text:
             return "fallback"
         raw_like: list[dict[str, object]] = [{"text": text, "start": 0.0, "duration": 0.0}]
