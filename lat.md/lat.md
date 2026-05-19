@@ -4,4 +4,5 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[descriptions]] — Fetch and cache YouTube video descriptions via the Data API v3
 - [[transcripts]] — Fetch and cache captions with a resumable SQLite-backed pipeline
 - [[summaries]] — Generate cached per-video summaries via a configurable LLM provider
+- [[embeddings]] — Compute sentence-transformer embeddings of title + summary/description per raw markdown
 - [[provider]] — Build the pydantic-ai model dispatched by the PROVIDER env var
