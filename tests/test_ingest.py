@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
 from youtubebrain import ingest
 from youtubebrain.ingest import (
     MARKDOWN_RAW_DIR,
     WATCH_HISTORY_PATH,
+    _channel_id,
     _render_markdown,
     _video_id,
     load_watch_history,
@@ -62,6 +64,15 @@ def _write_history(tmp_path: Path, records: list[dict[str, object]]) -> Path:
 def _build_video(**overrides: object) -> WatchedVideo:
     record = {**_VALID_RECORD, **overrides}
     return TypeAdapter(WatchedVideo).validate_python(record)
+
+
+def _parse_frontmatter(body: str) -> dict[str, object]:
+    """Return the YAML frontmatter dict from a rendered markdown body."""
+    if not body.startswith("---\n"):
+        msg = "body does not start with frontmatter delimiter"
+        raise ValueError(msg)
+    end = body.index("\n---\n", 4)
+    return yaml.safe_load(body[4:end])
 
 
 def _stub_fetch_descriptions(descriptions: dict[str, str | None]):  # noqa: ANN202
@@ -156,20 +167,41 @@ def test_video_id_raises_without_v_param() -> None:
         _video_id(url)
 
 
-# @lat: [[ingest#Tests#Render markdown fields]]
-def test_render_markdown_contains_all_fields() -> None:
-    """Rendered markdown includes title, titleUrl, channel name+url, ISO time and description."""
+# @lat: [[ingest#Tests#Channel ID extraction]]
+def test_channel_id_extracts_from_url() -> None:
+    """The last path segment after /channel/ is returned as the channel ID."""
+    url = _http_url("https://www.youtube.com/channel/UCvPXiKxH-eH9xq-80vpgmKQ")
+    assert _channel_id(url) == "UCvPXiKxH-eH9xq-80vpgmKQ"
+
+
+# @lat: [[ingest#Tests#Channel ID raises on bad URL]]
+def test_channel_id_raises_on_bad_url() -> None:
+    """URLs that are not /channel/<id> raise ValueError."""
+    url = _http_url("https://www.youtube.com/@EpicHistory")
+    with pytest.raises(ValueError, match="/channel/<id>"):
+        _channel_id(url)
+
+
+# @lat: [[ingest#Tests#Render markdown frontmatter]]
+def test_render_markdown_frontmatter() -> None:
+    """Rendered markdown frontmatter includes id, url, title, channels with id, and watch_time."""
     video = _build_video()
     body = _render_markdown(video, description="A short clip about something.")
-    assert "## Video" in body
-    assert "- Title: Test Video" in body
-    assert "https://www.youtube.com/watch?v=abc123" in body
-    assert "Test Channel" in body
-    assert "https://www.youtube.com/channel/UCxxx" in body
-    assert "2026-05-07T08:39:47.023000+00:00" in body
+    meta = _parse_frontmatter(body)
+    assert meta["id"] == "abc123"
+    assert meta["url"] == "https://www.youtube.com/watch?v=abc123"
+    assert meta["title"] == "Test Video"
+    assert meta["watch_time"] == "2026-05-07T08:39:47.023000+00:00"
+    channels = meta["channels"]
+    assert isinstance(channels, list)
+    assert len(channels) == 1
+    assert channels[0] == {
+        "name": "Test Channel",
+        "id": "UCxxx",
+        "url": "https://www.youtube.com/channel/UCxxx",
+    }
     assert "## Description" in body
     assert "A short clip about something." in body
-    assert "## Transcript" in body
     assert "## Transcript" in body
 
 
@@ -185,37 +217,38 @@ def test_render_markdown_unavailable_description() -> None:
 
 # @lat: [[ingest#Tests#Render multiple channels]]
 def test_render_markdown_lists_multiple_channels() -> None:
-    """A record with multiple subtitles renders each as its own bullet."""
+    """A record with multiple subtitles renders each channel as a YAML list entry."""
     video = _build_video(
         subtitles=[
             {"name": "Channel One", "url": "https://www.youtube.com/channel/UC1"},
             {"name": "Channel Two", "url": "https://www.youtube.com/channel/UC2"},
         ],
     )
-    body = _render_markdown(video)
-    assert "- [Channel One](https://www.youtube.com/channel/UC1)" in body
-    assert "- [Channel Two](https://www.youtube.com/channel/UC2)" in body
-    assert "## Transcript" in body
+    meta = _parse_frontmatter(_render_markdown(video))
+    channels = meta["channels"]
+    assert isinstance(channels, list)
+    assert len(channels) == 2
+    assert channels[0]["name"] == "Channel One"
+    assert channels[0]["id"] == "UC1"
+    assert channels[1]["name"] == "Channel Two"
+    assert channels[1]["id"] == "UC2"
 
 
 # @lat: [[ingest#Tests#Render empty subtitles]]
 def test_render_markdown_empty_subtitles() -> None:
-    """An empty subtitles list renders a (none) placeholder under Channels."""
+    """An empty subtitles list renders channels: [] in the frontmatter."""
     video = _build_video(subtitles=[])
-    body = _render_markdown(video)
-    assert "## Channels" in body
-    assert "_(none)_" in body
-    assert "## Transcript" in body
+    meta = _parse_frontmatter(_render_markdown(video))
+    assert meta["channels"] == []
 
 
 # @lat: [[ingest#Tests#Render strips watched prefix]]
 def test_render_markdown_strips_watched_prefix() -> None:
-    """The leading 'Watched ' from the Takeout title is dropped in the Title bullet."""
+    """The leading 'Watched ' from the Takeout title is dropped in the title frontmatter key."""
     video = _build_video(title="Watched Some Cool Video")
-    body = _render_markdown(video)
-    assert "- Title: Some Cool Video" in body
-    assert "- Title: Watched Some Cool Video" not in body
-    assert "## Transcript" in body
+    meta = _parse_frontmatter(_render_markdown(video))
+    assert meta["title"] == "Some Cool Video"
+    assert meta["title"] != "Watched Some Cool Video"
 
 
 # @lat: [[ingest#Tests#Write markdown creates file]]
@@ -226,7 +259,7 @@ def test_write_markdown_creates_named_file(tmp_path: Path) -> None:
     assert path == tmp_path / "JWWDqbcQoXA.md"
     assert path.exists()
     content = path.read_text()
-    assert "- Title: Test Video" in content
+    assert _parse_frontmatter(content)["title"] == "Test Video"
     assert "hello world" in content
     assert "## Transcript" in content
 
@@ -239,7 +272,7 @@ def test_write_markdown_overwrites_existing(tmp_path: Path) -> None:
     path.write_text("stale")
     write_markdown(video, tmp_path)
     assert "stale" not in path.read_text()
-    assert "- Title: Test Video" in path.read_text()
+    assert _parse_frontmatter(path.read_text())["title"] == "Test Video"
 
 
 # @lat: [[ingest#Tests#Write markdown requires title URL]]

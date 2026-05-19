@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import yaml
 from pydantic import HttpUrl, TypeAdapter
 
 from youtubebrain import logger
@@ -41,41 +42,52 @@ def _video_id(url: HttpUrl) -> str:
     return values[0]
 
 
+# @lat: [[ingest#Channel ID extraction]]
+def _channel_id(url: HttpUrl) -> str:
+    """Extract the YouTube channel ID (last path segment) from a /channel/<id> URL."""
+    parts = [p for p in urlparse(str(url)).path.split("/") if p]
+    if len(parts) < 2 or parts[-2] != "channel":
+        raise ValueError(f"URL is not a /channel/<id> URL: {url}")
+    return parts[-1]
+
+
 # @lat: [[ingest#Markdown writer]]
 def _render_markdown(
     video: WatchedVideo,
     description: str | None = None,
     transcript: str | None = None,
 ) -> str:
-    """Render a WatchedVideo as a markdown document body, optionally including description and transcript."""
-    lines = [
-        "## Video",
+    """Render a WatchedVideo as a markdown document with YAML frontmatter, description, and transcript."""
+    if video.title_url is None:
+        raise ValueError(f"WatchedVideo has no title_url: {video.title!r}")
+    frontmatter = {
+        "id": _video_id(video.title_url),
+        "url": str(video.title_url),
+        "title": video.title.removeprefix("Watched "),
+        "channels": [{"name": s.name, "id": _channel_id(s.url), "url": str(s.url)} for s in video.subtitles],
+        "watch_time": video.time.isoformat(),
+    }
+    yaml_body = yaml.safe_dump(
+        frontmatter,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    ).rstrip("\n")
+    body_lines = [
+        "---",
+        yaml_body,
+        "---",
         "",
-        f"- Title: {video.title.removeprefix('Watched ')}",
-        f"- Title URL: {video.title_url}",
-        f"- Time: {video.time.isoformat()}",
+        "## Description",
         "",
-        "## Channels",
+        description if description else "_(unavailable)_",
+        "",
+        "## Transcript",
+        "",
+        transcript if transcript else "_(unavailable)_",
         "",
     ]
-    if video.subtitles:
-        lines.extend(f"- [{s.name}]({s.url})" for s in video.subtitles)
-    else:
-        lines.append("_(none)_")
-    lines.extend(
-        [
-            "",
-            "## Description",
-            "",
-            description if description else "_(unavailable)_",
-            "",
-            "## Transcript",
-            "",
-            transcript if transcript else "_(unavailable)_",
-            "",
-        ]
-    )
-    return "\n".join(lines)
+    return "\n".join(body_lines)
 
 
 # @lat: [[ingest#Markdown writer]]
