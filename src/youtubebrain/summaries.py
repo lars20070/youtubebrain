@@ -1,4 +1,4 @@
-"""Generate per-video summaries via a local Ollama model with resumable SQLite storage."""
+"""Generate per-video summaries via a configurable LLM provider with resumable SQLite storage."""
 
 from __future__ import annotations
 
@@ -8,24 +8,20 @@ import os
 import sqlite3
 from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic_ai import Agent
-from pydantic_ai.models.ollama import OllamaModel
-from pydantic_ai.providers.ollama import OllamaProvider
 
 from youtubebrain import logger
 from youtubebrain.descriptions import DESCRIPTIONS_CACHE_PATH
+from youtubebrain.provider import create_model
 from youtubebrain.transcripts import TRANSCRIPTS_DB_PATH, load_transcripts
 
 SUMMARIES_DB_PATH = Path("Markdown/.cache/summaries.sqlite")
 
 _TRANSCRIPT_CHAR_LIMIT = 12000
 _DEFAULT_MODEL = "qwen3:32b"
-_DEFAULT_BASE_URL = "http://localhost:11434/v1"
 _MAX_ATTEMPTS = 5
 
-_SUMMARY_MODEL_ENV = "SUMMARY_MODEL"
-_OLLAMA_BASE_URL_ENV = "OLLAMA_BASE_URL"
+_MODEL_ENV = "MODEL"
 
 # @lat: [[summaries#System prompt]]
 SYSTEM_PROMPT = """\
@@ -55,12 +51,8 @@ def _truncate(text: str, limit: int = _TRANSCRIPT_CHAR_LIMIT) -> tuple[str, bool
 
 # @lat: [[summaries#Agent build]]
 def _build_agent() -> Agent[None, str]:
-    """Build a pydantic-ai Agent backed by a local Ollama model."""
-    load_dotenv()
-    model_name = os.environ.get(_SUMMARY_MODEL_ENV, _DEFAULT_MODEL)
-    base_url = os.environ.get(_OLLAMA_BASE_URL_ENV, _DEFAULT_BASE_URL)
-    logger.info(f"Summary agent using model {model_name!r} at {base_url!r}")
-    model = OllamaModel(model_name, provider=OllamaProvider(base_url=base_url))
+    """Build a pydantic-ai Agent using the provider selected via PROVIDER env var."""
+    model = create_model()
     return Agent(model, output_type=str, system_prompt=SYSTEM_PROMPT, retries=3)
 
 
@@ -171,7 +163,7 @@ async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
     """Process pending/error rows until none remain or attempts cap is reached."""
     init_db(db_path)
     agent = _build_agent()
-    model_name = os.environ.get(_SUMMARY_MODEL_ENV, _DEFAULT_MODEL)
+    model_name = os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
 
     from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
 

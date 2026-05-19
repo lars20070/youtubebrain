@@ -4,7 +4,7 @@ lat:
 ---
 # Summaries
 
-Generates per-video summaries via a local Ollama model, stores them in SQLite for resumable runs, and exposes plain text for [[ingest#Markdown writer]] via [[summaries#Read API]].
+Generates per-video summaries via a configurable LLM provider (Ollama by default; see [[provider]]), stores them in SQLite for resumable runs, and exposes plain text for [[ingest#Markdown writer]] via [[summaries#Read API]].
 
 The pipeline mirrors [[transcripts]]: a slow fetcher persists durable state, while [[src/youtubebrain/ingest.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. Summaries synthesise title, description, and transcript; sponsorship and merch boilerplate are ignored by prompt instruction, not regex stripping.
 
@@ -18,8 +18,8 @@ flowchart TD
     SM -->|enqueue| SmDB[(summaries_sqlite)]
     Desc --> SM
     TxDB --> SM
-    SM -->|fetch_summaries| Ollama[Ollama_via_pydantic_ai]
-    Ollama --> SmDB
+    SM -->|fetch_summaries| LLM[Provider_via_pydantic_ai]
+    LLM --> SmDB
     Ingest -->|load_summaries| SmDB
     Ingest --> MD[Markdown_raw]
 ```
@@ -34,7 +34,7 @@ It lazy-imports [[ingest#Loader]] helpers (`WATCH_HISTORY_PATH`, `load_watch_his
 
 [[src/youtubebrain/summaries.py#init_db]] ensures `Markdown/.cache/` exists, opens `summaries.sqlite`, sets WAL via `PRAGMA journal_mode=WAL`, and creates the `summaries` table plus `idx_summaries_status` on `status` if missing.
 
-Each row is keyed by `video_id`. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap). `text` holds the summary body; `model` records which Ollama model produced an `ok` row. `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and caps.
+Each row is keyed by `video_id`. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap). `text` holds the summary body; `model` records which model id produced an `ok` row. `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and caps.
 
 ## Enqueue
 
@@ -56,9 +56,9 @@ Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordere
 
 ## Agent build
 
-[[src/youtubebrain/summaries.py#_build_agent]] constructs a pydantic-ai `Agent` backed by a local Ollama model.
+[[src/youtubebrain/summaries.py#_build_agent]] constructs a pydantic-ai `Agent` whose model is built by [[provider#Model factory]].
 
-It reads `SUMMARY_MODEL` (default `qwen3:32b`) and `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`) after `load_dotenv()`, builds `OllamaModel` with `OllamaProvider(base_url=...)`, and returns an `Agent` with `output_type=str`, the system prompt, and `retries=3`. The chosen model id is logged at startup.
+The factory dispatches on the `PROVIDER` env var (default `ollama`) and returns either an `OpenAIChatModel` or a pydantic-ai shorthand string. The agent is wrapped with `output_type=str`, the system prompt, and `retries=3`. The `model` column in the SQLite table records the value of the `MODEL` env var (default `qwen3:32b`) for each `ok` row.
 
 ## System prompt
 
@@ -122,11 +122,11 @@ Input over `_TRANSCRIPT_CHAR_LIMIT` includes the truncation marker suffix.
 
 ### Default model when env unset
 
-With `SUMMARY_MODEL` unset, `OllamaModel` is constructed with `qwen3:32b`.
+`_build_agent` passes the model returned by [[provider#Model factory]] verbatim to the `Agent` constructor.
 
-### SUMMARY_MODEL env override
+### MODEL env override
 
-`SUMMARY_MODEL=foo:bar` is passed through to `OllamaModel`.
+`MODEL=foo:bar` is what `fetch_summaries` writes into the `model` column of `ok` rows.
 
 ### Fetch loop persists ok
 

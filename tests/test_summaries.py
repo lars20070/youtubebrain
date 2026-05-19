@@ -150,37 +150,56 @@ def test_truncate_marks_truncation() -> None:
 
 
 # @lat: [[summaries#Tests#Default model when env unset]]
-def test_build_agent_uses_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When SUMMARY_MODEL is unset, the agent is built with qwen3:32b."""
-    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
-    recorded: list[str] = []
+def test_build_agent_uses_create_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_build_agent passes the model returned by create_model to Agent."""
+    sentinel = object()
+    monkeypatch.setattr("youtubebrain.summaries.create_model", lambda: sentinel)
+    recorded: list[object] = []
 
-    def fake_ollama_model(name: str, *, provider: object) -> object:  # noqa: ARG001
-        recorded.append(name)
+    def fake_agent(model: object, **_kwargs: object) -> object:
+        recorded.append(model)
         return object()
 
-    monkeypatch.setattr("youtubebrain.summaries.OllamaModel", fake_ollama_model)
-    monkeypatch.setattr("youtubebrain.summaries.OllamaProvider", lambda base_url: object())  # noqa: ARG005
-    monkeypatch.setattr("youtubebrain.summaries.Agent", lambda *a, **k: object())  # noqa: ARG005
+    monkeypatch.setattr("youtubebrain.summaries.Agent", fake_agent)
     _build_agent()
-    assert recorded == ["qwen3:32b"]
+    assert recorded == [sentinel]
 
 
-# @lat: [[summaries#Tests#SUMMARY_MODEL env override]]
-def test_build_agent_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SUMMARY_MODEL env var overrides the default model id."""
-    monkeypatch.setenv("SUMMARY_MODEL", "foo:bar")
-    recorded: list[str] = []
+# @lat: [[summaries#Tests#MODEL env override]]
+@pytest.mark.asyncio
+async def test_fetch_summaries_honors_model_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """MODEL env var is recorded in the model column of ok rows."""
+    monkeypatch.setenv("MODEL", "foo:bar")
+    db = tmp_path / "s.sqlite"
+    init_db(db)
+    con = sqlite3.connect(db)
+    try:
+        con.execute("INSERT INTO summaries (video_id, status) VALUES ('vid1', 'pending')")
+        con.commit()
+    finally:
+        con.close()
 
-    def fake_ollama_model(name: str, *, provider: object) -> object:  # noqa: ARG001
-        recorded.append(name)
-        return object()
+    class _Video:
+        title = "Watched Hello"
+        title_url = "https://www.youtube.com/watch?v=vid1"
 
-    monkeypatch.setattr("youtubebrain.summaries.OllamaModel", fake_ollama_model)
-    monkeypatch.setattr("youtubebrain.summaries.OllamaProvider", lambda base_url: object())  # noqa: ARG005
-    monkeypatch.setattr("youtubebrain.summaries.Agent", lambda *a, **k: object())  # noqa: ARG005
-    _build_agent()
-    assert recorded == ["foo:bar"]
+    monkeypatch.setattr("youtubebrain.ingest.load_watch_history", lambda _p: [_Video()])
+    monkeypatch.setattr("youtubebrain.ingest._video_id", lambda _u: "vid1")
+    monkeypatch.setattr("youtubebrain.summaries._load_descriptions_cache", lambda: {"vid1": "desc"})
+    monkeypatch.setattr("youtubebrain.summaries.load_transcripts", lambda _ids, _db=None: {"vid1": "transcript"})
+    monkeypatch.setattr("youtubebrain.summaries._build_agent", lambda: _StubAgent("out"))
+
+    await fetch_summaries(db)
+
+    con = sqlite3.connect(db)
+    try:
+        row = con.execute("SELECT model FROM summaries WHERE video_id='vid1'").fetchone()
+        assert row[0] == "foo:bar"
+    finally:
+        con.close()
 
 
 # @lat: [[summaries#Tests#Fetch loop persists ok]]
@@ -190,6 +209,7 @@ async def test_fetch_summaries_persists_ok(
     tmp_path: Path,
 ) -> None:
     """fetch_summaries writes ok rows with text and model from a stub agent."""
+    monkeypatch.delenv("MODEL", raising=False)
     db = tmp_path / "s.sqlite"
     init_db(db)
     con = sqlite3.connect(db)

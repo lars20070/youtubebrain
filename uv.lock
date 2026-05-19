@@ -1033,6 +1033,9 @@ openai = [
     { name = "openai" },
     { name = "tiktoken" },
 ]
+openrouter = [
+    { name = "openai" },
+]
 
 [[package]]
 name = "pydantic-core"
@@ -1796,7 +1799,7 @@ dependencies = [
     { name = "httpx" },
     { name = "loguru" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim", extra = ["openai"] },
+    { name = "pydantic-ai-slim", extra = ["openai", "openrouter"] },
     { name = "pypandoc" },
     { name = "python-dotenv" },
     { name = "pytubefix" },
@@ -1823,7 +1826,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic", specifier = ">=2.10.6" },
-    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=1.0" },
+    { name = "pydantic-ai-slim", extras = ["openai", "openrouter"], specifier = ">=1.0" },
     { name = "pypandoc", specifier = ">=1.15" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pytubefix", specifier = ">=10.6" },
