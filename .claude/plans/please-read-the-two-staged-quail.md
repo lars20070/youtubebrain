@@ -66,7 +66,7 @@ EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
 
 ## `pyproject.toml`
 
-- deps: `sentence-transformers>=3.0,<5`, `numpy>=1.26,<3`
+- deps: `sentence-transformers>=3.0,<4`, `numpy>=1.26,<3`
 - scripts: `embed = "youtubebrain.embeddings:main"`
 - markers: add `slow_embedding: tests downloading real ST model`
 - addopts: extend filter `not paid and not ollama and not slow_embedding`
@@ -128,6 +128,4 @@ Expect `(N, 384) float32` and `N == len(ids)`.
 
 ## Unresolved questions
 
-- Confirm `<5` upper pin on `sentence-transformers` (latest is 3.x; pin loose enough)?
-- Add a `slow_embedding` marker now or defer?
-- Wire embed into `uv run ingest` later, or keep strictly separate?
+_(none — all resolved.)_
