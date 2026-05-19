@@ -22,6 +22,7 @@ lat.md/.cache
 Markdown/raw/*.md
 Markdown/.cache/
 Markdown/wiki/*.md
+Markdown/embeddings/*
 
 # Obsidian
 lat.md/.obsidian/workspace.json
