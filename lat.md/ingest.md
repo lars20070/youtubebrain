@@ -58,7 +58,7 @@ URLs that are not `/channel/<id>` (e.g. `/@handle` vanity URLs) raise `ValueErro
 
 [[src/youtubebrain/ingest.py#write_markdown]] writes a markdown file for one `WatchedVideo` into the configured output directory, named `<video_id>.md` where the ID comes from [[ingest#Video ID extraction]]. The body is produced by [[src/youtubebrain/ingest.py#_render_markdown]].
 
-Descriptions come from [[descriptions#API client]]; plain transcript text (when present) comes from [[transcripts#Read API]] and is rendered under a `## Transcript` heading after `## Description`.
+Summaries come from [[summaries#Read API]] and render under `## Summary` before `## Description`. Descriptions come from [[descriptions#API client]]; plain transcript text (when present) comes from [[transcripts#Read API]] under `## Transcript`.
 
 File layout:
 
@@ -74,6 +74,10 @@ channels:
 watch_time: {iso_time}
 ---
 
+## Summary
+
+{summary}
+
 ## Description
 
 {description}
@@ -87,7 +91,7 @@ Video metadata (`id`, `url`, `title`, `channels`, `watch_time`) lives in YAML fr
 
 The leading `Watched ` substring is stripped from the title before rendering — every kept record carries that prefix by construction of [[ingest#Non-watch activity filtering]], so the boilerplate adds no signal and dropping it keeps titles readable.
 
-Multiple subtitles become separate entries in the `channels` list. An empty subtitles list renders `channels: []`. A `None` description (video deleted or otherwise unavailable per [[descriptions#Missing videos]]) renders the `_(unavailable)_` placeholder under the Description heading.
+Multiple subtitles become separate entries in the `channels` list. An empty subtitles list renders `channels: []`. A missing cached summary renders `_(unavailable)_` under the Summary heading. A `None` description (video deleted or otherwise unavailable per [[descriptions#Missing videos]]) renders the `_(unavailable)_` placeholder under the Description heading.
 
 Writes are idempotent: a second call overwrites the file in place, so re-running `uv run ingest` against an updated Takeout export refreshes existing files without leaving stale duplicates.
 
@@ -162,6 +166,14 @@ An empty subtitles list renders `channels: []` in the frontmatter.
 ### Render strips watched prefix
 
 The `Watched ` prefix from Takeout titles is removed before the value is written to the `title` frontmatter key.
+
+### Render summary section
+
+`_render_markdown` includes `## Summary` before Description and Transcript with supplied summary body text.
+
+### Render unavailable summary
+
+A `None` summary argument renders the `_(unavailable)_` placeholder under the Summary heading.
 
 ### Render unavailable description
 

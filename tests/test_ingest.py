@@ -89,6 +89,11 @@ def _stub_load_transcripts_none(video_ids: list[str], db_path: Path | None = Non
     return dict.fromkeys(dict.fromkeys(video_ids), None)
 
 
+def _stub_load_summaries_none(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+    """Return no summary text (read from DB would be empty in tests)."""
+    return dict.fromkeys(dict.fromkeys(video_ids), None)
+
+
 # @lat: [[ingest#Tests#Parses valid record]]
 def test_parses_valid_record(tmp_path: Path) -> None:
     """A minimal valid JSON array round-trips into list[WatchedVideo]."""
@@ -200,9 +205,31 @@ def test_render_markdown_frontmatter() -> None:
         "id": "UCxxx",
         "url": "https://www.youtube.com/channel/UCxxx",
     }
+    assert "## Summary" in body
     assert "## Description" in body
     assert "A short clip about something." in body
     assert "## Transcript" in body
+
+
+# @lat: [[ingest#Tests#Render summary section]]
+def test_render_markdown_summary_section() -> None:
+    """Rendered markdown includes Summary before Description and Transcript with supplied body text."""
+    video = _build_video()
+    body = _render_markdown(video, description="d", transcript="t", summary="summary text")
+    summary_pos = body.index("## Summary")
+    desc_pos = body.index("## Description")
+    transcript_pos = body.index("## Transcript")
+    assert summary_pos < desc_pos < transcript_pos
+    assert "summary text" in body.split("## Summary")[1].split("## Description")[0]
+
+
+# @lat: [[ingest#Tests#Render unavailable summary]]
+def test_render_markdown_summary_unavailable() -> None:
+    """A None summary renders the _(unavailable)_ placeholder under the Summary heading."""
+    video = _build_video()
+    body = _render_markdown(video, description="d", transcript="t", summary=None)
+    assert "## Summary" in body
+    assert "_(unavailable)_" in body.split("## Summary")[1].split("## Description")[0]
 
 
 # @lat: [[ingest#Tests#Render unavailable description]]
@@ -306,6 +333,7 @@ def test_main_writes_files(
         _stub_fetch_descriptions({"abc123": "first desc", "JWWDqbcQoXA": "second desc"}),
     )
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
+    monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
     main()
     assert capsys.readouterr().out == ""
     assert (out_dir / "abc123.md").exists()
@@ -326,6 +354,7 @@ def test_main_skips_unresolved(
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
+    monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]
@@ -343,6 +372,7 @@ def test_main_skips_non_watch(
     monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
+    monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
     main()
     files = sorted(p.name for p in out_dir.iterdir())
     assert files == ["abc123.md"]

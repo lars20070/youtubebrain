@@ -11,6 +11,7 @@ dependencies = [
   "python-dotenv>=1.0",
   "tavily-python>=0.5.1",
   "pydantic>=2.10.6",
+  "pydantic-ai-slim[openai]>=1.0",
   "pypandoc>=1.15",
   "pyyaml>=6.0",
   "pytubefix>=10.6",
@@ -33,6 +34,7 @@ dev = [
 [project.scripts]
 ingest = "youtubebrain.ingest:main"
 transcripts = "youtubebrain.transcripts:main"
+summaries = "youtubebrain.summaries:main"
 
 [tool.uv]
 package = true
@@ -68,8 +70,12 @@ ignore = [
 convention = "google"
 
 [tool.pytest.ini_options]
-addopts = ["-m", "not paid", "--cov"] # Skip tests that require a paid API key; collect coverage
+addopts = ["-m", "not paid and not ollama", "--cov"] # Skip tests that require a paid API key or local Ollama; collect coverage
 asyncio_default_fixture_loop_scope = "session" # Use a single event loop for all tests. Switch to "function" for a new event loop for every test (more isolation).
+markers = [
+  "paid: tests requiring a paid API key",
+  "ollama: tests requiring a running local Ollama server",
+]
 
 [tool.coverage.run]
 branch = true

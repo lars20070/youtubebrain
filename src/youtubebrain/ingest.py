@@ -10,6 +10,7 @@ from pydantic import HttpUrl, TypeAdapter
 from youtubebrain import logger
 from youtubebrain.descriptions import fetch_descriptions
 from youtubebrain.models import WatchedVideo
+from youtubebrain.summaries import load_summaries
 from youtubebrain.transcripts import load_transcripts
 
 WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-history.json")
@@ -56,6 +57,7 @@ def _render_markdown(
     video: WatchedVideo,
     description: str | None = None,
     transcript: str | None = None,
+    summary: str | None = None,
 ) -> str:
     """Render a WatchedVideo as a markdown document with YAML frontmatter, description, and transcript."""
     if video.title_url is None:
@@ -78,6 +80,10 @@ def _render_markdown(
         yaml_body,
         "---",
         "",
+        "## Summary",
+        "",
+        summary if summary else "_(unavailable)_",
+        "",
         "## Description",
         "",
         description if description else "_(unavailable)_",
@@ -96,13 +102,14 @@ def write_markdown(
     out_dir: Path,
     description: str | None = None,
     transcript: str | None = None,
+    summary: str | None = None,
 ) -> Path:
     """Write a markdown file for video into out_dir, named <video_id>.md."""
     if video.title_url is None:
         raise ValueError(f"WatchedVideo has no title_url: {video.title!r}")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{_video_id(video.title_url)}.md"
-    path.write_text(_render_markdown(video, description, transcript))
+    path.write_text(_render_markdown(video, description, transcript, summary))
     return path
 
 
@@ -123,6 +130,7 @@ def main() -> None:
     ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
     descriptions = asyncio.run(fetch_descriptions(ids))
     transcripts = load_transcripts(ids)
+    summaries = load_summaries(ids)
     count = 0
     for video in videos:
         vid = _video_id(video.title_url) if video.title_url is not None else None
@@ -131,6 +139,7 @@ def main() -> None:
             MARKDOWN_RAW_DIR,
             descriptions.get(vid) if vid else None,
             transcripts.get(vid) if vid else None,
+            summaries.get(vid) if vid else None,
         )
         count += 1
     logger.info(f"Wrote {count} markdown files to {MARKDOWN_RAW_DIR}.")

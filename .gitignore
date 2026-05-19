@@ -25,3 +25,5 @@ Markdown/wiki/*.md
 
 # Obsidian
 lat.md/.obsidian/workspace.json
+
+tmp/

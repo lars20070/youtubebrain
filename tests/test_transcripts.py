@@ -456,9 +456,15 @@ def test_main_folds_transcripts(
     def fake_load(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
         return {"abc123": "transcript body"}
 
+    def fake_summaries(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+        return {"abc123": "summary body"}
+
     monkeypatch.setattr(ingest, "fetch_descriptions", fake_desc)
     monkeypatch.setattr(ingest, "load_transcripts", fake_load)
+    monkeypatch.setattr(ingest, "load_summaries", fake_summaries)
     main()
     text = (out_dir / "abc123.md").read_text()
     assert "transcript body" in text
     assert "## Transcript" in text
+    assert "summary body" in text
+    assert "## Summary" in text
