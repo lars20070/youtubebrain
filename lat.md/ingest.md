@@ -10,13 +10,26 @@ Loads YouTube watch history from a Google Takeout export and stores it for downs
 
 Pydantic model in [[src/youtubebrain/models.py#WatchedVideo]] mirroring one record from the Google Takeout `watch-history.json` array.
 
-Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and `subtitles` are optional because deleted or orphaned videos lack one or both. Unknown fields raise to surface schema drift.
+Fields (Python name → JSON key when aliased):
+
+- `header: str` — top-level Takeout product header, always `"YouTube"` for this export.
+- `title: str` — Takeout-rendered title, prefixed `"Watched "` for video watches.
+- `title_url: HttpUrl | None` (alias `titleUrl`) — canonical watch URL; absent for some legacy records.
+- `subtitles: list[Subtitle]` — channel references; defaults to `[]` when Takeout omits the key.
+- `time: datetime` — watch timestamp parsed from the ISO-8601 string.
+- `products: list[str]` — Takeout product tags (typically `["YouTube"]`).
+- `activity_controls: list[str]` (alias `activityControls`) — Google activity-controls labels in effect.
+- `description: str | None` — optional; populated downstream by [[descriptions#API client]], not by Takeout itself.
+
+The companion [[src/youtubebrain/models.py#Subtitle]] submodel carries `name: str` and `url: HttpUrl` for one channel reference.
+
+Both models declare `model_config = ConfigDict(extra="forbid")` so unknown JSON keys raise `ValidationError` to surface schema drift; `WatchedVideo` additionally sets `populate_by_name=True` so the camelCase aliases (`titleUrl`, `activityControls`) and snake_case field names both work. `title_url` and `subtitles` are optional because deleted or orphaned videos lack one or both.
 
 ## Loader
 
 [[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array, validates it as `list[WatchedVideo]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning.
 
-Running the module fetches descriptions via [[descriptions#API client]], reads any cached transcripts via [[transcripts#Read API]], and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
+Running the module fetches descriptions via [[descriptions#API client]], reads any cached transcripts via [[transcripts#Read API]], reads any cached summaries via [[summaries#Read API]], and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
 
 ## Non-watch activity filtering
 

@@ -48,9 +48,9 @@ The lazy import keeps unit tests offline: tests monkeypatch `_build_encoder` wit
 
 ## Embed loop
 
-[[src/youtubebrain/embeddings.py#embed_pending]] is the worker: load the existing store, walk `Markdown/raw/`, diff against the stored ids, encode the new texts in one batch, vstack onto the existing array, and save atomically.
+[[src/youtubebrain/embeddings.py#embed_pending]] is the worker: load the existing store, walk `Markdown/raw/`, diff against the stored ids, encode the pending texts in a single `encoder.encode` call, vstack onto the existing array, and save atomically.
 
-Encoding uses `batch_size=64`, `normalize_embeddings=True`, `convert_to_numpy=True`, then casts to `float32` so on-disk size is half what numpy would default to and downstream cosine similarity is a plain dot product. If the new vectors' dim differs from the existing store's, the loop raises `ValueError` without writing — the user must delete `Markdown/embeddings/` to rebuild under a new model.
+The single `encode` call internally iterates over batches of `_BATCH_SIZE = 64`; it is not literally one forward pass when more than 64 new ids are pending. Encoding uses `batch_size=64`, `normalize_embeddings=True`, `convert_to_numpy=True`, then casts to `float32` so on-disk size is half what numpy would default to and downstream cosine similarity is a plain dot product. If the new vectors' dim differs from the existing store's, the loop raises `ValueError` without writing — the user must delete `Markdown/embeddings/` to rebuild under a new model.
 
 ## Env vars
 

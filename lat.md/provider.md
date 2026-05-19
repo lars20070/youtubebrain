@@ -20,10 +20,10 @@ The string value matches the `PROVIDER` env var. Unknown values raise `ValueErro
 
 Per-provider wiring:
 
-- `ollama` / `lmstudio` — `OpenAIChatModel(model_name=MODEL, provider=OpenAIProvider(base_url=f"{HOST}/v1"))`, using `OLLAMA_HOST` / `LMSTUDIO_HOST`.
-- `openai` / `together` — return the shorthand strings `f"openai:{MODEL}"` / `f"together:{MODEL}"`; pydantic-ai auto-reads `OPENAI_API_KEY` / `TOGETHER_API_KEY`.
-- `deepinfra` — `OpenAIChatModel` with `OpenAIProvider(base_url=DEEPINFRA_BASE_URL, api_key=DEEPINFRA_API_KEY)`.
-- `openrouter` — constructs `AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)`, wraps it in `OpenRouterProvider(openai_client=...)`, then returns an `OpenAIChatModel`.
+- `ollama` / `lmstudio` — `OpenAIChatModel(model_name=MODEL, provider=OpenAIProvider(base_url=f"{HOST}/v1"))`, using `OLLAMA_HOST` / `LMSTUDIO_HOST`. No API-key check.
+- `openai` / `together` — call [[provider#API key validation]] for `OPENAI_API_KEY` / `TOGETHER_API_KEY` first, then return the shorthand strings `f"openai:{MODEL}"` / `f"together:{MODEL}"` so pydantic-ai handles model construction internally.
+- `deepinfra` — calls [[provider#API key validation]] for `DEEPINFRA_API_KEY`, then `OpenAIChatModel` with `OpenAIProvider(base_url=DEEPINFRA_BASE_URL, api_key=DEEPINFRA_API_KEY)`.
+- `openrouter` — calls [[provider#API key validation]] for `OPENROUTER_API_KEY`, then constructs `AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)`, wraps it in `OpenRouterProvider(openai_client=...)`, and returns an `OpenAIChatModel`.
 
 ## API key validation
 
@@ -45,11 +45,11 @@ PROVIDER=lmstudio reads `LMSTUDIO_HOST` and appends `/v1` to form the OpenAI-com
 
 ### OpenAI shorthand
 
-PROVIDER=openai returns the string `openai:<MODEL>` so pydantic-ai handles model construction internally.
+PROVIDER=openai validates `OPENAI_API_KEY` via `_check_api_key` and then returns the string `openai:<MODEL>` so pydantic-ai handles model construction internally.
 
 ### Together shorthand
 
-PROVIDER=together returns the string `together:<MODEL>` so pydantic-ai handles model construction internally.
+PROVIDER=together validates `TOGETHER_API_KEY` via `_check_api_key` and then returns the string `together:<MODEL>` so pydantic-ai handles model construction internally.
 
 ### DeepInfra base URL
 
