@@ -23,6 +23,7 @@ ASSIGNMENTS_JSON_PATH = CLUSTERING_DIR / "assignments.json"
 TOPICS_JSON_PATH = CLUSTERING_DIR / "topics.json"
 META_JSON_PATH = CLUSTERING_DIR / "meta.json"
 MODEL_DIR = CLUSTERING_DIR / "bertopic_model"
+WIKI_TOPICS_DIR = Path("Markdown/wiki/topics")
 
 _MIN_SIZE_FLOOR = 10
 _MIN_SIZE_ENV = "CLUSTER_MIN_SIZE"
@@ -38,6 +39,8 @@ _DEFAULT_LABEL_CONCURRENCY = 4
 _LABEL_CONCURRENCY_ENV = "LABEL_CONCURRENCY"
 _REP_TEXT_CHAR_BUDGET = 600
 _OUTLIER_CLUSTER_ID = -1
+_OUTLIER_SLUG = "outliers"
+_FRONTMATTER_FENCE = "---"
 
 _LABEL_SYSTEM_PROMPT = """\
 You name a cluster of YouTube videos. Given top keywords and up to 4 representative title+summary excerpts, return:
@@ -393,6 +396,178 @@ def _build_topic_info(
     )
 
 
+# @lat: [[clusters#Wiki topics#Slug resolution]]
+def _resolve_slugs(topics: list[TopicInfo]) -> dict[int, str]:
+    """Map cluster_id → unique kebab slug; suffix `-1`, `-2`, ... on label collisions.
+
+    Outlier cluster (-1) always resolves to the literal slug "outliers", regardless of its label.
+    Iteration is in cluster_id ascending order so the suffix assignment is deterministic.
+    """
+    slug_by_cluster: dict[int, str] = {}
+    used: set[str] = set()
+    for topic in sorted(topics, key=lambda t: t.cluster_id):
+        if topic.cluster_id == _OUTLIER_CLUSTER_ID:
+            slug = _OUTLIER_SLUG
+        else:
+            base = topic.label
+            slug = base
+            n = 1
+            while slug in used:
+                slug = f"{base}-{n}"
+                n += 1
+        used.add(slug)
+        slug_by_cluster[topic.cluster_id] = slug
+    return slug_by_cluster
+
+
+# @lat: [[clusters#Wiki topics#Page rendering]]
+def _load_titles_by_id(ids: list[str]) -> dict[str, str]:
+    """Walk Markdown/raw/ once; return {id: title} for ids that match a raw file."""
+    import yaml  # noqa: PLC0415
+
+    wanted = set(ids)
+    out: dict[str, str] = {}
+    for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
+        try:
+            video_id, title, _summary, _description = embeddings.parse_raw_markdown(path)
+        except (ValueError, yaml.YAMLError) as exc:
+            logger.warning(f"Skipping {path}: {exc}")
+            continue
+        if video_id in wanted:
+            out[video_id] = title
+    missing = [vid for vid in ids if vid not in out]
+    if missing:
+        logger.warning(
+            f"No raw file for {len(missing)} of {len(ids)} ids (e.g. {missing[:3]}); those entries will be listed by id only.",
+        )
+    return out
+
+
+# @lat: [[clusters#Wiki topics#Page rendering]]
+def _render_topic_page(topic: TopicInfo, slug: str, members: list[tuple[str, str]]) -> str:
+    """Render a topic page: frontmatter + heading + description + bulleted member list."""
+    import yaml  # noqa: PLC0415
+
+    frontmatter = {
+        "label": topic.label,
+        "cluster_id": topic.cluster_id,
+        "count": topic.count,
+        "keywords": list(topic.keywords),
+        "representative_ids": list(topic.representative_ids),
+    }
+    yaml_body = yaml.safe_dump(
+        frontmatter,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    ).rstrip("\n")
+    if members:
+        member_lines = [f"- {title} ([{vid}](../../../raw/{vid}.md))" for vid, title in members]
+    else:
+        member_lines = ["_(no members)_"]
+    body_lines = [
+        _FRONTMATTER_FENCE,
+        yaml_body,
+        _FRONTMATTER_FENCE,
+        "",
+        f"# {slug}",
+        "",
+        topic.description.strip() or "_(no description)_",
+        "",
+        "## Videos",
+        "",
+        *member_lines,
+        "",
+    ]
+    return "\n".join(body_lines)
+
+
+# @lat: [[clusters#Wiki topics#Raw frontmatter contract]]
+def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
+    """Set `topic` + `cluster_id` in the raw markdown frontmatter, exactly once each, idempotently.
+
+    Reads the file, parses the frontmatter dict via `yaml.safe_load` (collapses any pre-existing
+    duplicates), overwrites the two keys, and re-dumps with `sort_keys=False` so original key
+    order is preserved. The body after the second `---` fence is written back verbatim.
+    """
+    import yaml  # noqa: PLC0415
+
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
+        raise ValueError(f"Missing frontmatter fence in {path}")
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
+    except StopIteration as exc:
+        raise ValueError(f"Unclosed frontmatter in {path}") from exc
+    fm = yaml.safe_load("\n".join(lines[1:end])) or {}
+    if not isinstance(fm, dict):
+        raise ValueError(f"Frontmatter is not a mapping in {path}")
+    fm["topic"] = slug
+    fm["cluster_id"] = cluster_id
+    yaml_body = yaml.safe_dump(
+        fm,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    ).rstrip("\n")
+    body_tail = "\n".join(lines[end + 1 :])
+    rendered = f"{_FRONTMATTER_FENCE}\n{yaml_body}\n{_FRONTMATTER_FENCE}\n{body_tail}"
+    if not rendered.endswith("\n"):
+        rendered += "\n"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(rendered, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+# @lat: [[clusters#Wiki topics#Wipe-and-rewrite policy]]
+def write_wiki_topics(assignments: list[int], ids: list[str], topics: list[TopicInfo]) -> tuple[int, int]:
+    """Wipe & rewrite `Markdown/wiki/topics/<slug>/<slug>.md`; inject `topic`/`cluster_id` into raw files.
+
+    Returns (n_topics_written, n_raw_updated). Missing raw files are skipped with a count log.
+    """
+    slug_by_cluster = _resolve_slugs(topics)
+
+    shutil.rmtree(WIKI_TOPICS_DIR, ignore_errors=True)
+    WIKI_TOPICS_DIR.mkdir(parents=True, exist_ok=True)
+
+    members_by_cluster: dict[int, list[str]] = {}
+    for vid, cid in zip(ids, assignments, strict=True):
+        members_by_cluster.setdefault(cid, []).append(vid)
+
+    titles_by_id = _load_titles_by_id(ids)
+
+    for topic in topics:
+        slug = slug_by_cluster[topic.cluster_id]
+        member_ids = members_by_cluster.get(topic.cluster_id, [])
+        members = [(vid, titles_by_id.get(vid, vid)) for vid in member_ids]
+        page_dir = WIKI_TOPICS_DIR / slug
+        page_dir.mkdir(parents=True, exist_ok=True)
+        (page_dir / f"{slug}.md").write_text(_render_topic_page(topic, slug, members), encoding="utf-8")
+
+    n_updated = 0
+    n_missing = 0
+    for vid, cid in zip(ids, assignments, strict=True):
+        raw_path = embeddings.MARKDOWN_RAW_DIR / f"{vid}.md"
+        if not raw_path.exists():
+            n_missing += 1
+            continue
+        try:
+            _inject_topic_into_raw(raw_path, slug_by_cluster[cid], cid)
+        except (ValueError, OSError) as exc:
+            logger.warning(f"Failed to inject topic into {raw_path}: {exc}")
+            continue
+        n_updated += 1
+    if n_missing:
+        logger.warning(f"{n_missing} raw files missing during topic injection (out of {len(ids)} ids).")
+
+    return len(topics), n_updated
+
+
 # @lat: [[clusters#CLI entry]]
 def cluster_all() -> int:
     """Load embeddings, fit BERTopic, label clusters via LLM, save atomically. Returns n_clusters excl. outliers."""
@@ -470,6 +645,10 @@ def cluster_all() -> int:
     save_atomic(assignments, topics, meta, topic_model)
     logger.info(
         f"Cluster run complete: n_clusters={n_clusters}, n_outliers={n_outliers}, min_cluster_size={min_size}, llm_model={meta['llm_model']!r}.",
+    )
+    n_topics_written, n_raw_updated = write_wiki_topics(assignments, ids, topics)
+    logger.info(
+        f"Wiki topics written: {n_topics_written}, raw frontmatter updated: {n_raw_updated}.",
     )
     return n_clusters
 

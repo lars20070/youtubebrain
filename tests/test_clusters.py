@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+import yaml
 
 from youtubebrain import clusters
 from youtubebrain import embeddings as emb
@@ -73,6 +74,9 @@ def _patch_stores(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path
     monkeypatch.setattr(clusters, "TOPICS_JSON_PATH", cl_dir / "topics.json")
     monkeypatch.setattr(clusters, "META_JSON_PATH", cl_dir / "meta.json")
     monkeypatch.setattr(clusters, "MODEL_DIR", cl_dir / "bertopic_model")
+
+    wiki_topics_dir = tmp_path / "wiki" / "topics"
+    monkeypatch.setattr(clusters, "WIKI_TOPICS_DIR", wiki_topics_dir)
     return emb_dir, raw_dir, cl_dir
 
 
@@ -544,6 +548,211 @@ def test_load_texts_by_id_reads_raw_markdown(monkeypatch: pytest.MonkeyPatch, tm
     assert out["vid2"] == "T2\n\nDesc Two"
     assert "vidGhost" not in out  # both summary and description are unavailable
     assert "vidMissing" not in out  # no file on disk
+
+
+def _topic(cid: int, label: str, count: int = 1, **overrides: Any) -> clusters.TopicInfo:  # noqa: ANN401
+    """Minimal TopicInfo factory for the wiki-topic tests."""
+    base: dict[str, Any] = {
+        "cluster_id": cid,
+        "count": count,
+        "label": label,
+        "description": "desc.",
+        "keywords": [],
+        "representative_ids": [],
+    }
+    base.update(overrides)
+    return clusters.TopicInfo(**base)
+
+
+# @lat: [[clusters#Wiki topics#Tests#Slug resolution dedups]]
+def test_resolve_slugs_dedups_collisions_and_handles_outlier() -> None:
+    """Two clusters sharing label `x` resolve to `x` and `x-1`; outlier maps to `outliers`."""
+    topics = [
+        _topic(-1, "anything"),
+        _topic(0, "x"),
+        _topic(1, "x"),
+        _topic(2, "y"),
+        _topic(3, "x"),
+    ]
+    slugs = clusters._resolve_slugs(topics)
+    assert slugs[-1] == "outliers"
+    assert slugs[0] == "x"
+    assert slugs[1] == "x-1"
+    assert slugs[2] == "y"
+    assert slugs[3] == "x-2"
+
+
+# @lat: [[clusters#Wiki topics#Tests#Wipe & rewrite removes stale folders]]
+def test_write_wiki_topics_wipes_stale_folders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A pre-existing topic folder is removed before the current run writes its slugs."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    stale_dir = clusters.WIKI_TOPICS_DIR / "stale"
+    stale_dir.mkdir(parents=True)
+    (stale_dir / "stale.md").write_text("old", encoding="utf-8")
+
+    _write_md(raw_dir / "vid1.md", id="vid1", title="One")
+    _write_md(raw_dir / "vid2.md", id="vid2", title="Two")
+    topics = [_topic(0, "fresh-topic", count=2)]
+    clusters.write_wiki_topics([0, 0], ["vid1", "vid2"], topics)
+
+    assert not stale_dir.exists()
+    assert (clusters.WIKI_TOPICS_DIR / "fresh-topic" / "fresh-topic.md").exists()
+
+
+# @lat: [[clusters#Wiki topics#Tests#Topic page rendered correctly]]
+def test_topic_page_frontmatter_and_member_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`<slug>/<slug>.md` has the expected frontmatter dict and a bullet per member."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md(raw_dir / "vidA.md", id="vidA", title="Alpha Title")
+    _write_md(raw_dir / "vidB.md", id="vidB", title="Beta Title")
+    topic = _topic(
+        0,
+        "demo-cluster",
+        count=2,
+        description="A demo cluster.",
+        keywords=["alpha", "beta"],
+        representative_ids=["vidA"],
+    )
+    clusters.write_wiki_topics([0, 0], ["vidA", "vidB"], [topic])
+
+    page = (clusters.WIKI_TOPICS_DIR / "demo-cluster" / "demo-cluster.md").read_text(encoding="utf-8")
+    fence = "---"
+    assert page.startswith(fence + "\n")
+    _, fm_text, body = page.split(fence + "\n", 2)
+    fm = yaml.safe_load(fm_text)
+    assert fm == {
+        "label": "demo-cluster",
+        "cluster_id": 0,
+        "count": 2,
+        "keywords": ["alpha", "beta"],
+        "representative_ids": ["vidA"],
+    }
+    assert "# demo-cluster" in body
+    assert "A demo cluster." in body
+    assert "- Alpha Title ([vidA](../../../raw/vidA.md))" in body
+    assert "- Beta Title ([vidB](../../../raw/vidB.md))" in body
+
+
+# @lat: [[clusters#Wiki topics#Tests#Raw frontmatter injected]]
+def test_inject_topic_into_raw_adds_fields_idempotently(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`_inject_topic_into_raw` adds `topic` + `cluster_id` without touching body; second call is no-op."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    path = _write_md(raw_dir / "vid1.md", id="vid1", title="Hi", summary="Body One")
+
+    clusters._inject_topic_into_raw(path, "demo-cluster", 0)
+    text1 = path.read_text(encoding="utf-8")
+    fence = "---"
+    _, fm_text, body = text1.split(fence + "\n", 2)
+    fm = yaml.safe_load(fm_text)
+    assert fm["topic"] == "demo-cluster"
+    assert fm["cluster_id"] == 0
+    assert fm["id"] == "vid1"
+    assert fm["title"] == "Hi"
+    assert "## Summary" in body
+    assert "Body One" in body
+
+    clusters._inject_topic_into_raw(path, "demo-cluster", 0)
+    text2 = path.read_text(encoding="utf-8")
+    assert text1 == text2
+
+
+# @lat: [[clusters#Wiki topics#Tests#Raw frontmatter never duplicated]]
+def test_inject_topic_never_duplicates_fields(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Re-running with different values leaves each key exactly once; pre-existing duplicates collapse."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    path = _write_md(raw_dir / "vid1.md", id="vid1", title="Hi")
+
+    clusters._inject_topic_into_raw(path, "first-slug", 1)
+    clusters._inject_topic_into_raw(path, "second-slug", 7)
+    text = path.read_text(encoding="utf-8")
+    assert text.count("\ntopic:") == 1
+    assert text.count("\ncluster_id:") == 1
+    assert "topic: second-slug" in text
+    assert "cluster_id: 7" in text
+
+    duplicated = "---\nid: vid2\ntitle: Dup\ntopic: stale-1\ntopic: stale-2\ncluster_id: 9\ncluster_id: 11\n---\n\n## Summary\n\nbody\n"
+    dup_path = raw_dir / "vid2.md"
+    dup_path.write_text(duplicated, encoding="utf-8")
+    clusters._inject_topic_into_raw(dup_path, "third-slug", 3)
+    fixed = dup_path.read_text(encoding="utf-8")
+    assert fixed.count("\ntopic:") == 1
+    assert fixed.count("\ncluster_id:") == 1
+    assert "topic: third-slug" in fixed
+    assert "cluster_id: 3" in fixed
+
+
+# @lat: [[clusters#Wiki topics#Tests#Outliers folder written]]
+def test_outliers_folder_and_raw_injection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Outlier assignments produce an `outliers/outliers.md` page and inject `topic: outliers` into the raw file."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md(raw_dir / "vidA.md", id="vidA", title="A")
+    _write_md(raw_dir / "vidB.md", id="vidB", title="B")
+    topics = [
+        _topic(-1, "outliers", count=1, description="Videos that did not fit any cluster."),
+        _topic(0, "real-topic", count=1),
+    ]
+    clusters.write_wiki_topics([-1, 0], ["vidA", "vidB"], topics)
+
+    out_md = clusters.WIKI_TOPICS_DIR / "outliers" / "outliers.md"
+    assert out_md.exists()
+    fence = "---"
+    _, fm_text, _body = out_md.read_text(encoding="utf-8").split(fence + "\n", 2)
+    fm = yaml.safe_load(fm_text)
+    assert fm["label"] == "outliers"
+    assert fm["cluster_id"] == -1
+
+    a_fm = yaml.safe_load((raw_dir / "vidA.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
+    assert a_fm["topic"] == "outliers"
+    assert a_fm["cluster_id"] == -1
+
+
+# @lat: [[clusters#Wiki topics#Tests#Cluster all writes wiki]]
+def test_cluster_all_writes_wiki_topics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`cluster_all` produces both the clustering trio and the wiki topic pages + injects raw frontmatter."""
+    emb_dir, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    ids = [f"vid{i:02d}" for i in range(6)]
+    _seed_embeddings(emb_dir, ids)
+    for vid in ids:
+        _write_md(raw_dir / f"{vid}.md", id=vid, title=f"Title {vid}", summary=f"summary {vid}")
+    monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
+
+    topic_model = _StubTopicModel(
+        [0, 0, 0, 1, 1, 1],
+        {
+            0: {"keywords": ["alpha"], "rep_docs": []},
+            1: {"keywords": ["gamma"], "rep_docs": []},
+        },
+    )
+    _patch_pipeline(monkeypatch, topic_model, _StubAgent())
+
+    clusters.cluster_all()
+
+    assert (clusters.WIKI_TOPICS_DIR / "alpha-cluster" / "alpha-cluster.md").exists()
+    assert (clusters.WIKI_TOPICS_DIR / "gamma-cluster" / "gamma-cluster.md").exists()
+
+    fence = "---"
+    fm0 = yaml.safe_load((raw_dir / "vid00.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
+    assert fm0["topic"] == "alpha-cluster"
+    assert fm0["cluster_id"] == 0
+    fm5 = yaml.safe_load((raw_dir / "vid05.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
+    assert fm5["topic"] == "gamma-cluster"
+    assert fm5["cluster_id"] == 1
+
+
+# @lat: [[clusters#Wiki topics#Tests#Missing raw file does not abort]]
+def test_write_wiki_topics_tolerates_missing_raw_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An id with no raw file does not abort; sibling video still gets injected and topic page written."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md(raw_dir / "vidA.md", id="vidA", title="A")
+    # vidGhost intentionally has no markdown file on disk.
+    topics = [_topic(0, "demo", count=2)]
+    clusters.write_wiki_topics([0, 0], ["vidA", "vidGhost"], topics)
+
+    assert (clusters.WIKI_TOPICS_DIR / "demo" / "demo.md").exists()
+    fence = "---"
+    fm = yaml.safe_load((raw_dir / "vidA.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
+    assert fm["topic"] == "demo"
+    assert fm["cluster_id"] == 0
 
 
 # @lat: [[clusters#Tests#Real BERTopic smoke]]

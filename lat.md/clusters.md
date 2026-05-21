@@ -16,6 +16,8 @@ flowchart TD
     Reps --> Agent[pydantic-ai_Agent_per_cluster]
     Agent --> Topics[(topics.json)]
     Fit --> Model[(bertopic_model/)]
+    Topics --> Wiki[(wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md)]
+    Assign --> RawFM[raw/&lt;id&gt;.md frontmatter: topic + cluster_id]
 ```
 
 ## CLI entry
@@ -65,6 +67,38 @@ Downstream consumers MUST key off the human-readable kebab-case `label` field on
 `PROVIDER` and `MODEL` are reused via [[provider#Model factory]] for the labelling agent — set them to whichever model is cheapest at the time of running.
 
 `CLUSTER_MIN_SIZE` overrides the [[clusters#Min-cluster-size heuristic]]. `LABEL_CONCURRENCY` (default 4) caps the parallel LLM calls during labelling; bump it to 8–16 for cloud providers, drop it to 1–2 for local Ollama.
+
+## Wiki topics
+
+After `save_atomic`, [[src/youtubebrain/clusters.py#write_wiki_topics]] materialises every cluster as a folder + markdown page under `Markdown/wiki/topics/<slug>/<slug>.md` and injects `topic` + `cluster_id` into every `Markdown/raw/<id>.md` frontmatter.
+
+The step runs inline at the end of every `uv run cluster`. It returns `(n_topics_written, n_raw_updated)` and is fail-soft per video — a missing raw file is logged in aggregate and does not abort the run.
+
+### Slug resolution
+
+[[src/youtubebrain/clusters.py#_resolve_slugs]] maps each `cluster_id` to a unique slug.
+
+The non-outlier `TopicInfo.label` is the slug verbatim; on collision the second and further occurrences are suffixed `-1`, `-2`, ... in cluster_id ascending order. The outlier cluster (`-1`) always resolves to the literal slug `outliers`.
+
+### Page rendering
+
+[[src/youtubebrain/clusters.py#_render_topic_page]] writes one minimal markdown page per cluster under `Markdown/wiki/topics/<slug>/<slug>.md`.
+
+The page is: YAML frontmatter `{label, cluster_id, count, keywords, representative_ids}` (same `sort_keys=False, allow_unicode=True, default_flow_style=False` style as [[ingest#Markdown writer]]), an H1 of the slug, the LLM description as a paragraph, then a `## Videos` list of `- <title> ([<id>](../../../raw/<id>.md))` lines.
+
+Member titles come from [[src/youtubebrain/clusters.py#_load_titles_by_id]], which reuses [[src/youtubebrain/embeddings.py#parse_raw_markdown]] for one pass over `Markdown/raw/`; ids without a raw file are listed by id only.
+
+### Raw frontmatter contract
+
+[[src/youtubebrain/clusters.py#_inject_topic_into_raw]] sets `topic` and `cluster_id` in every `Markdown/raw/<id>.md` frontmatter, exactly once each, idempotently.
+
+It parses the frontmatter dict via `yaml.safe_load` (which collapses any pre-existing duplicates), overwrites the two keys, and re-dumps with `sort_keys=False` so original key order is preserved. The body after the second `---` fence is written back verbatim. The write is atomic via `*.tmp` + `os.replace`, so a crash leaves either the previous or the new file intact. Re-running with the same `(slug, cluster_id)` is a byte-identical no-op.
+
+### Wipe-and-rewrite policy
+
+Because cluster ids and LLM labels are not stable across runs (see [[clusters#Re-cluster policy]]), [[src/youtubebrain/clusters.py#write_wiki_topics]] `shutil.rmtree`s `Markdown/wiki/topics/` and recreates it from scratch every run.
+
+Manually edited topic pages will be lost — by design, this layer is fully owned by the cluster step.
 
 ## Output schema
 
@@ -147,3 +181,43 @@ Setting `LABEL_CONCURRENCY=12` makes `_label_concurrency()` return 12; an invali
 ### Real BERTopic smoke
 
 A `slow_clustering`-marked test fits real BERTopic + UMAP + HDBSCAN on 200 synthetic 384-d gaussian-blob vectors and asserts at least 2 clusters are discovered; skipped by default via the `pytest.ini_options.addopts` filter.
+
+## Wiki topics
+
+Test specs for the wiki-topics step; each leaf below maps to one `# @lat:` comment in `tests/test_clusters.py`.
+
+### Tests
+
+The wiki-topics-step test coverage.
+
+#### Slug resolution dedups
+
+`_resolve_slugs` maps two clusters with shared label `x` to `{0: "x", 1: "x-1"}` and the outlier cluster (`-1`) to `outliers` regardless of its label.
+
+#### Wipe & rewrite removes stale folders
+
+A pre-existing `topics/stale/stale.md` is gone after `write_wiki_topics` runs and only the current slug folders remain.
+
+#### Topic page rendered correctly
+
+`<slug>/<slug>.md` round-trips through `yaml.safe_load` to the expected frontmatter and the body contains the description paragraph and one `- <title> ([<id>](../../../raw/<id>.md))` line per member.
+
+#### Raw frontmatter injected
+
+`_inject_topic_into_raw` adds `topic` and `cluster_id` without touching the existing keys or body; a second call with the same values is a byte-identical no-op on disk.
+
+#### Raw frontmatter never duplicated
+
+Two calls with *different* values leave exactly one `topic:` and one `cluster_id:` line, holding the second values; a synthetic file containing duplicate `topic:`/`cluster_id:` lines is rewritten to contain each key exactly once.
+
+#### Outliers folder written
+
+When assignments include `-1`s, `topics/outliers/outliers.md` exists and the corresponding raw files carry `topic: outliers, cluster_id: -1`.
+
+#### Cluster all writes wiki
+
+Happy-path `cluster_all` leaves both `Markdown/clustering/*.json` and `Markdown/wiki/topics/<slug>/<slug>.md` files in place, and the raw markdown fixtures get `topic`/`cluster_id` injected matching their assignment.
+
+#### Missing raw file does not abort
+
+An id with no `Markdown/raw/<id>.md` does not abort `write_wiki_topics`; the topic page still gets written and sibling videos still get their frontmatter injected.
