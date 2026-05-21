@@ -23,6 +23,7 @@ Markdown/raw/*.md
 Markdown/.cache/
 Markdown/wiki/*.md
 Markdown/embeddings/*
+Markdown/clustering/*
 
 # Obsidian
 lat.md/.obsidian/workspace.json
