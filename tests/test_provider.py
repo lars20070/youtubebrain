@@ -170,6 +170,7 @@ def test_create_model_unsupported_provider(monkeypatch: pytest.MonkeyPatch) -> N
         create_model()
 
 
+# @lat: [[provider#Tests#API key helper message format]]
 def test_check_api_key_helper_message() -> None:
     """_check_api_key formats the error with uppercase provider name."""
     with pytest.raises(ValueError, match="OPENAI_API_KEY is required for the openai model provider."):

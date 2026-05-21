@@ -66,3 +66,7 @@ Each cloud provider raises `ValueError` mentioning the expected `<PROVIDER>_API_
 ### Unsupported provider
 
 An unknown `PROVIDER` value raises `ValueError` with message `Unsupported provider: <value>`.
+
+### API key helper message format
+
+`_check_api_key(None, Provider.openai)` raises `ValueError` whose message contains the uppercased env var name and the lowercased provider name (`OPENAI_API_KEY is required for the openai model provider.`).
