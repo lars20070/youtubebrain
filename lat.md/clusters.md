@@ -24,7 +24,7 @@ flowchart TD
 
 [[src/youtubebrain/clusters.py#main]] is the `uv run cluster` entry point; it calls [[src/youtubebrain/clusters.py#cluster_all]] and logs the resulting cluster count.
 
-Pipeline order: `uv run ingest` → `uv run transcripts` → `uv run summaries` → `uv run embed` → `uv run cluster`. The command is idempotent against unchanged embeddings but always retrains the model (see [[clusters#Re-cluster policy]]); cluster ids are therefore not stable across runs.
+Pipeline order is documented in [[overview#Run order]] — `cluster` is always the last step and must follow a successful `embed`. The command is idempotent against unchanged embeddings but always retrains the model (see [[clusters#Re-cluster policy]]); cluster ids are therefore not stable across runs.
 
 ## Storage layout
 
