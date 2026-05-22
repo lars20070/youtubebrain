@@ -508,11 +508,13 @@ def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
     except StopIteration as exc:
         raise ValueError(f"Unclosed frontmatter in {path}") from exc
     try:
-        fm = yaml.safe_load("\n".join(lines[1:end])) or {}
+        fm = yaml.safe_load("\n".join(lines[1:end]))
     except yaml.YAMLError as exc:
         raise ValueError(f"Malformed frontmatter in {path}: {exc}") from exc
-    if not isinstance(fm, dict):
-        raise ValueError(f"Frontmatter is not a mapping in {path}")
+    if fm is None:
+        fm = {}
+    elif not isinstance(fm, dict):
+        raise ValueError(f"Malformed frontmatter in {path}: expected mapping but got {type(fm).__name__}")
     fm["topic"] = slug
     fm["cluster_id"] = cluster_id
     yaml_body = yaml.safe_dump(

@@ -94,7 +94,7 @@ Member titles come from [[src/youtubebrain/clusters.py#_load_titles_by_id]], whi
 
 It parses the frontmatter dict via `yaml.safe_load` (which collapses any pre-existing duplicates), overwrites the two keys, and re-dumps with `sort_keys=False` so original key order is preserved. The body after the second `---` fence is written back verbatim. The write is atomic via `*.tmp` + `os.replace`, so a crash leaves either the previous or the new file intact. Re-running with the same `(slug, cluster_id)` is a byte-identical no-op.
 
-Malformed-frontmatter raw files raise `ValueError` (yaml parse errors are converted, joining the existing `Missing/Unclosed frontmatter fence` and `Frontmatter is not a mapping` cases). [[src/youtubebrain/clusters.py#write_wiki_topics]] catches these per-file and logs a warning, so one bad raw file does not abort the whole injection pass.
+Malformed-frontmatter raw files raise `ValueError`. The covered cases are missing or unclosed fences, yaml parse errors, and non-mapping top-level YAML (e.g. a scalar `0`, `False`, or a list) — only an entirely empty frontmatter is treated as `{}`, so a falsy non-mapping value is never silently coerced away. [[src/youtubebrain/clusters.py#write_wiki_topics]] catches these per-file and logs a warning, so one bad raw file does not abort the whole injection pass.
 
 ### Wipe-and-rewrite policy
 
