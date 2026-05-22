@@ -582,6 +582,26 @@ def test_resolve_slugs_dedups_collisions_and_handles_outlier() -> None:
     assert slugs[3] == "x-2"
 
 
+# @lat: [[clusters#Wiki topics#Tests#Slug sanitisation]]
+def test_resolve_slugs_sanitises_unsafe_labels() -> None:
+    """Path traversal, whitespace, and empty labels cannot escape the topics directory."""
+    topics = [
+        _topic(0, "../etc/passwd"),
+        _topic(1, "Rust  Async"),
+        _topic(2, "   "),
+        _topic(3, "--leading--and--trailing--"),
+    ]
+    slugs = clusters._resolve_slugs(topics)
+    for slug in slugs.values():
+        assert "/" not in slug
+        assert ".." not in slug
+        assert slug == slug.strip("-")
+    assert slugs[0] == "etc-passwd"
+    assert slugs[1] == "rust-async"
+    assert slugs[2] == "topic-2"
+    assert slugs[3] == "leading-and-trailing"
+
+
 # @lat: [[clusters#Wiki topics#Tests#Wipe & rewrite removes stale folders]]
 def test_write_wiki_topics_wipes_stale_folders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A pre-existing topic folder is removed before the current run writes its slugs."""

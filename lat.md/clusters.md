@@ -78,7 +78,7 @@ The step runs inline at the end of every `uv run cluster`. It returns `(n_topics
 
 [[src/youtubebrain/clusters.py#_resolve_slugs]] maps each `cluster_id` to a unique slug.
 
-The non-outlier `TopicInfo.label` is the slug verbatim; on collision the second and further occurrences are suffixed `-1`, `-2`, ... in cluster_id ascending order. The outlier cluster (`-1`) always resolves to the literal slug `outliers`.
+The non-outlier `TopicInfo.label` is sanitised before being used as a filesystem path: lowercased, runs of non-`[a-z0-9]` collapsed to a single `-`, leading/trailing hyphens stripped, with `topic-{cluster_id}` as fallback for an otherwise-empty result. On collision the second and further occurrences are suffixed `-1`, `-2`, ... in cluster_id ascending order. The outlier cluster (`-1`) always resolves to the literal slug `outliers`.
 
 ### Page rendering
 
@@ -193,6 +193,10 @@ The wiki-topics-step test coverage.
 #### Slug resolution dedups
 
 `_resolve_slugs` maps two clusters with shared label `x` to `{0: "x", 1: "x-1"}` and the outlier cluster (`-1`) to `outliers` regardless of its label.
+
+#### Slug sanitisation
+
+`_resolve_slugs` coerces unsafe labels — `../etc/passwd`, `Rust  Async`, `"  "`, leading/trailing punctuation — into filesystem-safe kebab slugs and falls back to `topic-{cluster_id}` for an otherwise-empty result.
 
 #### Wipe & rewrite removes stale folders
 

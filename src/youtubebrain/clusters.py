@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 import os
+import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -396,12 +397,18 @@ def _build_topic_info(
     )
 
 
+_SLUG_NON_KEBAB_RE = re.compile(r"[^a-z0-9]+")
+
+
 # @lat: [[clusters#Wiki topics#Slug resolution]]
 def _resolve_slugs(topics: list[TopicInfo]) -> dict[int, str]:
     """Map cluster_id → unique kebab slug; suffix `-1`, `-2`, ... on label collisions.
 
-    Outlier cluster (-1) always resolves to the literal slug "outliers", regardless of its label.
-    Iteration is in cluster_id ascending order so the suffix assignment is deterministic.
+    Sanitises each non-outlier `TopicInfo.label` into filesystem-safe `[a-z0-9-]+` form
+    (with `topic-{cluster_id}` as fallback when the result would be empty) before the dedup
+    loop, so no raw LLM-or-fallback label ever becomes a path. The outlier cluster (-1) always
+    resolves to the literal slug "outliers". Iteration is in cluster_id ascending order so the
+    suffix assignment is deterministic.
     """
     slug_by_cluster: dict[int, str] = {}
     used: set[str] = set()
@@ -409,7 +416,7 @@ def _resolve_slugs(topics: list[TopicInfo]) -> dict[int, str]:
         if topic.cluster_id == _OUTLIER_CLUSTER_ID:
             slug = _OUTLIER_SLUG
         else:
-            base = topic.label
+            base = _SLUG_NON_KEBAB_RE.sub("-", topic.label.lower()).strip("-") or f"topic-{topic.cluster_id}"
             slug = base
             n = 1
             while slug in used:
