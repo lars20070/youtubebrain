@@ -10,13 +10,26 @@ Loads YouTube watch history from a Google Takeout export and stores it for downs
 
 Pydantic model in [[src/youtubebrain/models.py#WatchedVideo]] mirroring one record from the Google Takeout `watch-history.json` array.
 
-Snake_case Python fields are aliased to the camelCase JSON keys. `title_url` and `subtitles` are optional because deleted or orphaned videos lack one or both. Unknown fields raise to surface schema drift.
+Fields (Python name → JSON key when aliased):
+
+- `header: str` — top-level Takeout product header, always `"YouTube"` for this export.
+- `title: str` — Takeout-rendered title, prefixed `"Watched "` for video watches.
+- `title_url: HttpUrl | None` (alias `titleUrl`) — canonical watch URL; absent for some legacy records.
+- `subtitles: list[Subtitle]` — channel references; defaults to `[]` when Takeout omits the key.
+- `time: datetime` — watch timestamp parsed from the ISO-8601 string.
+- `products: list[str]` — Takeout product tags (typically `["YouTube"]`).
+- `activity_controls: list[str]` (alias `activityControls`) — Google activity-controls labels in effect.
+- `description: str | None` — optional; populated downstream by [[descriptions#API client]], not by Takeout itself.
+
+The companion [[src/youtubebrain/models.py#Subtitle]] submodel carries `name: str` and `url: HttpUrl` for one channel reference.
+
+Both models declare `model_config = ConfigDict(extra="forbid")` so unknown JSON keys raise `ValidationError` to surface schema drift; `WatchedVideo` additionally sets `populate_by_name=True` so the camelCase aliases (`titleUrl`, `activityControls`) and snake_case field names both work. `title_url` and `subtitles` are optional because deleted or orphaned videos lack one or both.
 
 ## Loader
 
 [[src/youtubebrain/ingest.py#load_watch_history]] reads the Takeout `watch-history.json` array, validates it as `list[WatchedVideo]`, then applies [[ingest#Non-watch activity filtering]] and [[ingest#Unresolved title filtering]] before returning.
 
-Running the module fetches descriptions via [[descriptions#API client]], reads any cached transcripts via [[transcripts#Read API]], and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
+Running the module fetches descriptions via [[descriptions#API client]], reads any cached transcripts via [[transcripts#Read API]], reads any cached summaries via [[summaries#Read API]], and writes one markdown file per kept video to [[ingest#Default output directory]]. Progress and per-run record counts (parsed, kept, files written) are emitted via the project loguru logger to `youtubebrain.log`; stdout is silent.
 
 ## Non-watch activity filtering
 
@@ -48,34 +61,50 @@ Filtering at ingest is therefore preferred over carrying the entries downstream 
 
 A URL without a `v` parameter (e.g. a community-post URL of the form `/post/<id>`) raises `ValueError`. Non-watch records are already dropped by [[ingest#Non-watch activity filtering]] before reaching this function, so the raise is a hard schema-drift signal rather than an expected runtime branch.
 
+## Channel ID extraction
+
+[[src/youtubebrain/ingest.py#_channel_id]] returns the last path segment from a canonical `/channel/<id>` URL — for example `https://www.youtube.com/channel/UCvPXiKxH-eH9xq-80vpgmKQ` yields `UCvPXiKxH-eH9xq-80vpgmKQ`.
+
+URLs that are not `/channel/<id>` (e.g. `/@handle` vanity URLs) raise `ValueError`, matching the hard schema-drift posture of [[ingest#Video ID extraction]].
+
 ## Markdown writer
 
 [[src/youtubebrain/ingest.py#write_markdown]] writes a markdown file for one `WatchedVideo` into the configured output directory, named `<video_id>.md` where the ID comes from [[ingest#Video ID extraction]]. The body is produced by [[src/youtubebrain/ingest.py#_render_markdown]].
 
-Descriptions come from [[descriptions#API client]]; plain transcript text (when present) comes from [[transcripts#Read API]] and is rendered under a `## Transcript` heading after `## Description`.
+Summaries come from [[summaries#Read API]] and render under `## Summary` before `## Description`. Descriptions come from [[descriptions#API client]]; plain transcript text (when present) comes from [[transcripts#Read API]] under `## Transcript`.
 
 File layout:
 
 ```
-## Video
+---
+id: {video_id}
+url: {title_url}
+title: {title}
+channels:
+  - name: {channel_name}
+    id: {channel_id}
+    url: {channel_url}
+watch_time: {iso_time}
+---
 
-- Title: {title}
-- Title URL: {title_url}
-- Time: {time}
+## Summary
 
-## Channels
-
-- [{name}]({url})
-- ...
+{summary}
 
 ## Description
 
 {description}
+
+## Transcript
+
+{transcript}
 ```
+
+Video metadata (`id`, `url`, `title`, `channels`, `watch_time`) lives in YAML frontmatter serialised via PyYAML. Channel `id` values come from [[ingest#Channel ID extraction]] on each subtitle URL.
 
 The leading `Watched ` substring is stripped from the title before rendering — every kept record carries that prefix by construction of [[ingest#Non-watch activity filtering]], so the boilerplate adds no signal and dropping it keeps titles readable.
 
-Multiple subtitles are rendered as separate bullets. An empty subtitles list renders `_(none)_` under the Channels heading so the section is never absent. A `None` description (video deleted or otherwise unavailable per [[descriptions#Missing videos]]) renders the `_(unavailable)_` placeholder under the Description heading.
+Multiple subtitles become separate entries in the `channels` list. An empty subtitles list renders `channels: []`. A missing cached summary renders `_(unavailable)_` under the Summary heading. A `None` description (video deleted or otherwise unavailable per [[descriptions#Missing videos]]) renders the `_(unavailable)_` placeholder under the Description heading.
 
 Writes are idempotent: a second call overwrites the file in place, so re-running `uv run ingest` against an updated Takeout export refreshes existing files without leaving stale duplicates.
 
@@ -127,21 +156,37 @@ Unknown JSON keys raise ValidationError to surface schema drift, per `extra="for
 
 `_video_id` raises `ValueError` on URLs lacking a `v` query parameter, such as `/post/<id>` community-post URLs.
 
-### Render markdown fields
+### Channel ID extraction
 
-`_render_markdown` output includes the title, titleUrl, channel name and url, and the ISO-formatted time.
+`_channel_id` returns the last path segment from a `/channel/<id>` URL.
+
+### Channel ID raises on bad URL
+
+`_channel_id` raises `ValueError` on URLs that are not `/channel/<id>`, such as `/@handle` vanity URLs.
+
+### Render markdown frontmatter
+
+`_render_markdown` YAML frontmatter includes `id`, `url`, `title`, `channels` (each with `name`, `id`, `url`), and `watch_time`.
 
 ### Render multiple channels
 
-A record with multiple subtitles renders each channel as its own markdown bullet under the Channels heading.
+A record with multiple subtitles renders each channel as its own entry in the `channels` YAML list.
 
 ### Render empty subtitles
 
-An empty subtitles list renders a `_(none)_` placeholder under the Channels heading so the section is never absent.
+An empty subtitles list renders `channels: []` in the frontmatter.
 
 ### Render strips watched prefix
 
-The `Watched ` prefix from Takeout titles is removed before the title is written to the markdown file.
+The `Watched ` prefix from Takeout titles is removed before the value is written to the `title` frontmatter key.
+
+### Render summary section
+
+`_render_markdown` includes `## Summary` before Description and Transcript with supplied summary body text.
+
+### Render unavailable summary
+
+A `None` summary argument renders the `_(unavailable)_` placeholder under the Summary heading.
 
 ### Render unavailable description
 

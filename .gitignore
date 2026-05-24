@@ -20,7 +20,13 @@ lat.md/.cache
 # YouTube
 *-history.json
 Markdown/raw/*.md
+Markdown/wiki/**/*.md
 Markdown/.cache/
+Markdown/wiki/*.md
+Markdown/embeddings/*
+Markdown/clustering/*
 
 # Obsidian
 lat.md/.obsidian/workspace.json
+
+tmp/
