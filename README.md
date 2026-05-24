@@ -14,7 +14,16 @@ The steps below read `Takeout/YouTube and YouTube Music/history/watch-history.js
 
 ### Run the pipeline
 
-Six invocations in order. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. See [lat.md/overview.md](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files.
+Six invocations in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. See this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files.
+
+```bash
+uv run ingest
+uv run transcripts
+uv run summaries
+uv run ingest
+uv run embed
+uv run cluster
+```
 
 1. `uv run ingest` — fetch descriptions (YouTube Data API), write initial `Markdown/raw/<id>.md` with placeholder Summary / Transcript sections.
 2. `uv run transcripts` — long-running, throttled, resumable caption fetch into `Markdown/.cache/transcripts.sqlite`. If rows are marked `blocked` after IP throttling, reset them to `pending` or `error` (or delete) before the next run.
