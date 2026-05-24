@@ -12,8 +12,14 @@ The steps below read `Takeout/YouTube and YouTube Music/history/watch-history.js
 4. Submit the export, wait for the email (~20 minutes), and download the ZIP.
 5. Unzip it and copy the `Takeout/` folder into the root of this repo. The final path must be `Takeout/YouTube and YouTube Music/history/watch-history.json`.
 
-### Fetch transcripts and ingest
+### Run the pipeline
 
-- `uv run transcripts` — long-running transcript fetch (throttled, resumable) into that SQLite DB. If the fetcher marks rows `blocked` after IP throttling, set those rows back to `pending` or `error` in SQLite (or delete them) before the next `uv run transcripts` so they are retried.
-- `uv run ingest` — fetches video descriptions (YouTube Data API) and writes `Markdown/raw/<video_id>.md`, including any transcripts already in `Markdown/.cache/transcripts.sqlite`.
+Six invocations in order. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. See [lat.md/overview.md](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files.
+
+1. `uv run ingest` — fetch descriptions (YouTube Data API), write initial `Markdown/raw/<id>.md` with placeholder Summary / Transcript sections.
+2. `uv run transcripts` — long-running, throttled, resumable caption fetch into `Markdown/.cache/transcripts.sqlite`. If rows are marked `blocked` after IP throttling, reset them to `pending` or `error` (or delete) before the next run.
+3. `uv run summaries` — long-running LLM summarizer; reads descriptions + transcripts, writes `Markdown/.cache/summaries.sqlite`.
+4. `uv run ingest` — second pass; rewrites `Markdown/raw/<id>.md` with the now-cached transcripts and summaries folded in.
+5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
+6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/` and `Markdown/wiki/topics/`.
 
