@@ -289,12 +289,14 @@ def save_atomic(
         os.replace(meta_tmp, META_JSON_PATH)
 
         if topic_model is not None:
+            embedding_model_name = meta.get("embedding_model")
+            save_embedding_model: str | bool = embedding_model_name if isinstance(embedding_model_name, str) and embedding_model_name else False
             shutil.rmtree(model_tmp, ignore_errors=True)
             topic_model.save(
                 str(model_tmp),
                 serialization="safetensors",
                 save_ctfidf=True,
-                save_embedding_model=False,
+                save_embedding_model=save_embedding_model,
             )
             shutil.rmtree(MODEL_DIR, ignore_errors=True)
             os.replace(model_tmp, MODEL_DIR)

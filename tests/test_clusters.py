@@ -161,7 +161,7 @@ class _StubTopicModel:
         *,
         serialization: str,
         save_ctfidf: bool,
-        save_embedding_model: bool,
+        save_embedding_model: str | bool,
     ) -> None:
         out = Path(path)
         out.mkdir(parents=True, exist_ok=True)
@@ -297,6 +297,26 @@ def test_meta_records_run_summary_fields(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert meta["llm_model"] == "stub-label-model"
     assert meta["bertopic_version"] == "0.16.0-stub"
     assert meta["embedding_model"] == "stub-model"
+
+
+# @lat: [[clusters#Tests#BERTopic save records embedding model name]]
+def test_save_atomic_passes_embedding_model_name_to_bertopic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """save_atomic forwards `meta['embedding_model']` to topic_model.save(save_embedding_model=...)."""
+    emb_dir, _raw, _cl = _patch_stores(monkeypatch, tmp_path)
+    ids = [f"vid{i:02d}" for i in range(6)]
+    _seed_embeddings(emb_dir, ids)
+    monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
+
+    topic_model = _StubTopicModel(
+        [0, 0, 1, 1, 1, 0],
+        {0: {"keywords": ["a"], "rep_docs": []}, 1: {"keywords": ["b"], "rep_docs": []}},
+    )
+    _patch_pipeline(monkeypatch, topic_model, _StubAgent())
+
+    clusters.cluster_all()
+
+    assert topic_model.save_kwargs is not None
+    assert topic_model.save_kwargs["save_embedding_model"] == "stub-model"
 
 
 # @lat: [[clusters#Tests#CLUSTER_MIN_SIZE env override]]

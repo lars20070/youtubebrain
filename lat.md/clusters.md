@@ -32,6 +32,8 @@ Pipeline order is documented in [[overview#Run order]] — `cluster` is always t
 
 Atomic write protocol mirrors [[embeddings#Storage layout]]: each json file is written to a `*.tmp` sibling then `os.replace`-d into place in order assignments → topics → meta. The BERTopic model is saved to a sibling `bertopic_model.tmp/` directory, then the existing `bertopic_model/` is removed and the tmp directory replaced into place. A failing mid-write step never leaves `*.tmp` siblings — [[src/youtubebrain/clusters.py#save_atomic]]'s `finally` block sweeps them up. [[src/youtubebrain/clusters.py#load_existing]] reads the trio back; any schema mismatch is logged and treated as empty so the next run rebuilds cleanly. The BERTopic model is persisted with `prediction_data=True` so a future Phase 5 `partial_fit` over new embedding rows is unblocked.
 
+`topic_model.save(...)` receives `save_embedding_model=meta["embedding_model"]` — the SentenceTransformer id read from `Markdown/embeddings/meta.json` and threaded through the run's meta dict. This stores a pointer (the model id string) inside the BERTopic artefact rather than re-serialising the weights, which silences BERTopic's "saving without explicitly defining an embedding model" warning and makes the saved model self-describing on reload. When `meta["embedding_model"]` is missing or non-string the call falls back to `False` and the warning is allowed to surface, since there is genuinely no encoder id to record.
+
 ## Pipeline components
 
 [[src/youtubebrain/clusters.py#_build_umap]], [[src/youtubebrain/clusters.py#_build_hdbscan]], and [[src/youtubebrain/clusters.py#_build_topic_model]] each lazy-import their heavy dependency so the default test run never touches `umap-learn`, `hdbscan`, or `bertopic`.
@@ -123,6 +125,10 @@ After `cluster_all`, the saved `assignments.json` has the same length as `ids.js
 ### Meta records run summary
 
 `meta.json` records `n_clusters`, `n_outliers`, `min_cluster_size`, `llm_model`, `bertopic_version`, and the resolved `embedding_model` so a future run can compare against it.
+
+### BERTopic save records embedding model name
+
+`save_atomic` forwards `meta["embedding_model"]` into `topic_model.save(save_embedding_model=...)` as a pointer string. The stub's recorded `save_kwargs["save_embedding_model"]` equals `embeddings/meta.json.model`, never `False`.
 
 ### CLUSTER_MIN_SIZE env override
 
