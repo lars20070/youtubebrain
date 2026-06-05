@@ -30,5 +30,5 @@ uv run cluster
 3. `uv run summaries` — long-running LLM summarizer; reads descriptions + transcripts, writes `Markdown/.cache/summaries.sqlite`.
 4. `uv run ingest` — second pass; rewrites `Markdown/raw/<id>.md` with the now-cached transcripts and summaries folded in.
 5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
-6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/` and `Markdown/wiki/topics/`.
+6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
 
