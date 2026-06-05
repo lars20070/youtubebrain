@@ -18,6 +18,7 @@ flowchart TD
     Fit --> Model[(bertopic_model/)]
     Topics --> Wiki[(wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md)]
     Assign --> RawFM[raw/&lt;id&gt;.md frontmatter: topic + cluster_id]
+    RawFM --> Creators[(wiki/creators/&lt;channel_id&gt;.md)]
 ```
 
 ## CLI entry
@@ -103,6 +104,38 @@ Malformed-frontmatter raw files raise `ValueError`. The covered cases are missin
 Because cluster ids and LLM labels are not stable across runs (see [[clusters#Re-cluster policy]]), [[src/youtubebrain/clusters.py#write_wiki_topics]] `shutil.rmtree`s `Markdown/wiki/topics/` and recreates it from scratch every run.
 
 Manually edited topic pages will be lost — by design, this layer is fully owned by the cluster step.
+
+## Wiki creators
+
+After the wiki-topics step, [[src/youtubebrain/clusters.py#write_wiki_creators]] materialises one stub markdown page per distinct YouTube channel under `Markdown/wiki/creators/<channel_id>.md`, so creators become first-class wiki pages whose bodies are filled in by hand later.
+
+[[src/youtubebrain/clusters.py#_iter_channels_from_raw]] walks `Markdown/raw/` once and reads the `channels` list (`name`, `id`, `url`) out of each raw frontmatter — the same list [[ingest#Markdown writer]] originally wrote. Channels are deduped by `id` (first occurrence wins); entries with a non-string field, an empty id, or an id containing `/`, `\`, or `..` are logged and skipped for filesystem safety, and a malformed raw frontmatter is skipped without aborting the walk.
+
+Each created page is YAML frontmatter `{name, id, url}` (same `sort_keys=False, allow_unicode=True, default_flow_style=False` style as [[clusters#Wiki topics#Page rendering]]) followed by an empty body. Unlike the wiki-topics layer's [[clusters#Wiki topics#Wipe-and-rewrite policy]], this step is **preserve-existing**: it only creates files for channels that have no page yet and never overwrites, so hand-added body content survives every re-run. The function returns `(n_created, n_existing)` and runs inline at the end of [[src/youtubebrain/clusters.py#cluster_all]]; it depends only on the raw files, not on the cluster assignments.
+
+### Tests
+
+Test specs for the wiki-creators step; each leaf below maps to one `# @lat:` comment in `tests/test_clusters.py`.
+
+#### Creators written from raw
+
+`write_wiki_creators` writes `wiki/creators/<channel_id>.md` for each channel in the raw frontmatter; the file round-trips through `yaml.safe_load` to `{name, id, url}` and has an empty body.
+
+#### Channels deduped by id
+
+A channel id appearing across two raw files produces exactly one creator page.
+
+#### Existing creator preserved
+
+A pre-existing `wiki/creators/<id>.md` with body content is left byte-identical after `write_wiki_creators` runs and is counted as existing, not created.
+
+#### Malformed channel skipped
+
+A channel entry missing `id` (or with an unsafe id) is skipped and the remaining valid channels are still written, without aborting the run.
+
+#### Cluster all writes creators
+
+Happy-path `cluster_all` leaves `Markdown/wiki/creators/<channel_id>.md` stubs in place alongside the clustering trio and wiki topic pages.
 
 ## Output schema
 

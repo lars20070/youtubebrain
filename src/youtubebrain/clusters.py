@@ -25,6 +25,7 @@ TOPICS_JSON_PATH = CLUSTERING_DIR / "topics.json"
 META_JSON_PATH = CLUSTERING_DIR / "meta.json"
 MODEL_DIR = CLUSTERING_DIR / "bertopic_model"
 WIKI_TOPICS_DIR = Path("Markdown/wiki/topics")
+WIKI_CREATORS_DIR = Path("Markdown/wiki/creators")
 
 _MIN_SIZE_FLOOR = 10
 _MIN_SIZE_ENV = "CLUSTER_MIN_SIZE"
@@ -582,6 +583,75 @@ def write_wiki_topics(assignments: list[int], ids: list[str], topics: list[Topic
     return len(topics), n_updated
 
 
+# @lat: [[clusters#Wiki creators]]
+def _iter_channels_from_raw() -> dict[str, dict[str, str]]:
+    """Walk Markdown/raw/ once; return {channel_id: {name, id, url}} deduped by id, first occurrence wins.
+
+    Reads the `channels` list out of each raw frontmatter. Malformed frontmatter or channel entries
+    are logged and skipped, never aborting the walk. Channel ids that are non-string, empty, or contain
+    path separators / `..` are rejected for filesystem safety.
+    """
+    import yaml  # noqa: PLC0415
+
+    channels: dict[str, dict[str, str]] = {}
+    for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
+        try:
+            text = path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
+                raise ValueError("missing frontmatter fence")
+            end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
+            fm = yaml.safe_load("\n".join(lines[1:end]))
+        except (ValueError, StopIteration, yaml.YAMLError, OSError) as exc:
+            logger.warning(f"Skipping {path} during creator scan: {exc}")
+            continue
+        if not isinstance(fm, dict):
+            continue
+        for entry in fm.get("channels") or []:
+            if not isinstance(entry, dict):
+                continue
+            name, channel_id, url = entry.get("name"), entry.get("id"), entry.get("url")
+            if not (isinstance(name, str) and isinstance(channel_id, str) and isinstance(url, str)):
+                logger.warning(f"Skipping malformed channel entry in {path}: {entry!r}")
+                continue
+            if not channel_id or "/" in channel_id or "\\" in channel_id or ".." in channel_id:
+                logger.warning(f"Skipping channel with unsafe id in {path}: {channel_id!r}")
+                continue
+            channels.setdefault(channel_id, {"name": name, "id": channel_id, "url": url})
+    return channels
+
+
+# @lat: [[clusters#Wiki creators]]
+def write_wiki_creators() -> tuple[int, int]:
+    """Write one stub `Markdown/wiki/creators/<channel_id>.md` per distinct channel; preserve existing files.
+
+    Returns (n_created, n_existing). Each created page is YAML frontmatter `{name, id, url}` with an empty
+    body. Existing files are never overwritten, so hand-added body content survives re-runs.
+    """
+    import yaml  # noqa: PLC0415
+
+    channels = _iter_channels_from_raw()
+    WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
+
+    n_created = 0
+    n_existing = 0
+    for channel_id, channel in channels.items():
+        path = WIKI_CREATORS_DIR / f"{channel_id}.md"
+        if path.exists():
+            n_existing += 1
+            continue
+        yaml_body = yaml.safe_dump(
+            channel,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).rstrip("\n")
+        page = f"{_FRONTMATTER_FENCE}\n{yaml_body}\n{_FRONTMATTER_FENCE}\n"
+        path.write_text(page, encoding="utf-8")
+        n_created += 1
+    return n_created, n_existing
+
+
 # @lat: [[clusters#CLI entry]]
 def cluster_all() -> int:
     """Load embeddings, fit BERTopic, label clusters via LLM, save atomically. Returns n_clusters excl. outliers."""
@@ -663,6 +733,10 @@ def cluster_all() -> int:
     n_topics_written, n_raw_updated = write_wiki_topics(assignments, ids, topics)
     logger.info(
         f"Wiki topics written: {n_topics_written}, raw frontmatter updated: {n_raw_updated}.",
+    )
+    n_creators_created, n_creators_existing = write_wiki_creators()
+    logger.info(
+        f"Wiki creators written: {n_creators_created} new, {n_creators_existing} already present.",
     )
     return n_clusters
 

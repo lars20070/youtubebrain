@@ -77,6 +77,9 @@ def _patch_stores(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path
 
     wiki_topics_dir = tmp_path / "wiki" / "topics"
     monkeypatch.setattr(clusters, "WIKI_TOPICS_DIR", wiki_topics_dir)
+
+    wiki_creators_dir = tmp_path / "wiki" / "creators"
+    monkeypatch.setattr(clusters, "WIKI_CREATORS_DIR", wiki_creators_dir)
     return emb_dir, raw_dir, cl_dir
 
 
@@ -793,6 +796,113 @@ def test_write_wiki_topics_tolerates_missing_raw_file(monkeypatch: pytest.Monkey
     fm = yaml.safe_load((raw_dir / "vidA.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
     assert fm["topic"] == "demo"
     assert fm["cluster_id"] == 0
+
+
+def _write_md_with_channels(path: Path, video_id: str, channels: list[dict[str, str]]) -> Path:
+    """Write a minimal raw markdown file with a populated `channels` frontmatter block."""
+    fm = {
+        "id": video_id,
+        "url": f"https://www.youtube.com/watch?v={video_id}",
+        "title": f"Title {video_id}",
+        "channels": channels,
+        "watch_time": "2026-05-06T14:50:16.546000+00:00",
+    }
+    yaml_body = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True, default_flow_style=False).rstrip("\n")
+    path.write_text(f"---\n{yaml_body}\n---\n\n## Summary\n\n_(unavailable)_\n", encoding="utf-8")
+    return path
+
+
+def _channel(name: str, channel_id: str) -> dict[str, str]:
+    """Build a channel frontmatter entry."""
+    return {"name": name, "id": channel_id, "url": f"https://www.youtube.com/channel/{channel_id}"}
+
+
+# @lat: [[clusters#Wiki creators#Tests#Creators written from raw]]
+def test_write_wiki_creators_writes_pages_from_raw(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Each channel in the raw frontmatter yields a `<channel_id>.md` stub with `{name, id, url}` and an empty body."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md_with_channels(raw_dir / "vidA.md", "vidA", [_channel("Daily Savior", "UC_chan_one")])
+
+    n_created, n_existing = clusters.write_wiki_creators()
+    assert (n_created, n_existing) == (1, 0)
+
+    page = clusters.WIKI_CREATORS_DIR / "UC_chan_one.md"
+    assert page.exists()
+    text = page.read_text(encoding="utf-8")
+    fm = yaml.safe_load(text.split("---\n", 2)[1])
+    assert fm == {"name": "Daily Savior", "id": "UC_chan_one", "url": "https://www.youtube.com/channel/UC_chan_one"}
+    assert text.split("---\n", 2)[2].strip() == ""
+
+
+# @lat: [[clusters#Wiki creators#Tests#Channels deduped by id]]
+def test_write_wiki_creators_dedups_channels(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A channel id appearing across two raw files produces exactly one creator page."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md_with_channels(raw_dir / "vidA.md", "vidA", [_channel("Shared", "UC_dup")])
+    _write_md_with_channels(raw_dir / "vidB.md", "vidB", [_channel("Shared", "UC_dup")])
+
+    n_created, _ = clusters.write_wiki_creators()
+    assert n_created == 1
+    assert list(clusters.WIKI_CREATORS_DIR.glob("*.md")) == [clusters.WIKI_CREATORS_DIR / "UC_dup.md"]
+
+
+# @lat: [[clusters#Wiki creators#Tests#Existing creator preserved]]
+def test_write_wiki_creators_preserves_existing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A pre-existing creator page with body content is left byte-identical and counted as existing."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md_with_channels(raw_dir / "vidA.md", "vidA", [_channel("Kept", "UC_keep")])
+
+    clusters.WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
+    existing = clusters.WIKI_CREATORS_DIR / "UC_keep.md"
+    original = "---\nname: Kept\nid: UC_keep\nurl: https://example.com\n---\n\nHand-written notes about this creator.\n"
+    existing.write_text(original, encoding="utf-8")
+
+    n_created, n_existing = clusters.write_wiki_creators()
+    assert (n_created, n_existing) == (0, 1)
+    assert existing.read_text(encoding="utf-8") == original
+
+
+# @lat: [[clusters#Wiki creators#Tests#Malformed channel skipped]]
+def test_write_wiki_creators_skips_malformed_channel(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A channel entry missing `id` is skipped while remaining valid channels are still written."""
+    _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    _write_md_with_channels(
+        raw_dir / "vidA.md",
+        "vidA",
+        [
+            {"name": "No Id", "url": "https://www.youtube.com/channel/missing"},  # type: ignore[list-item]
+            _channel("Valid", "UC_ok"),
+        ],
+    )
+
+    n_created, _ = clusters.write_wiki_creators()
+    assert n_created == 1
+    assert (clusters.WIKI_CREATORS_DIR / "UC_ok.md").exists()
+
+
+# @lat: [[clusters#Wiki creators#Tests#Cluster all writes creators]]
+def test_cluster_all_writes_wiki_creators(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Happy-path `cluster_all` leaves `wiki/creators/<channel_id>.md` stubs alongside the topic pages."""
+    emb_dir, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
+    ids = [f"vid{i:02d}" for i in range(6)]
+    _seed_embeddings(emb_dir, ids)
+    for i, vid in enumerate(ids):
+        _write_md_with_channels(raw_dir / f"{vid}.md", vid, [_channel(f"Chan {i}", f"UC_chan_{i}")])
+    monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
+
+    topic_model = _StubTopicModel(
+        [0, 0, 0, 1, 1, 1],
+        {
+            0: {"keywords": ["alpha"], "rep_docs": []},
+            1: {"keywords": ["gamma"], "rep_docs": []},
+        },
+    )
+    _patch_pipeline(monkeypatch, topic_model, _StubAgent())
+
+    clusters.cluster_all()
+
+    for i in range(6):
+        assert (clusters.WIKI_CREATORS_DIR / f"UC_chan_{i}.md").exists()
 
 
 # @lat: [[clusters#Tests#Real BERTopic smoke]]
