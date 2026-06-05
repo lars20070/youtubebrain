@@ -502,22 +502,7 @@ def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
     """
     import yaml  # noqa: PLC0415
 
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
-        raise ValueError(f"Missing frontmatter fence in {path}")
-    try:
-        end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
-    except StopIteration as exc:
-        raise ValueError(f"Unclosed frontmatter in {path}") from exc
-    try:
-        fm = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as exc:
-        raise ValueError(f"Malformed frontmatter in {path}: {exc}") from exc
-    if fm is None:
-        fm = {}
-    elif not isinstance(fm, dict):
-        raise ValueError(f"Malformed frontmatter in {path}: expected mapping but got {type(fm).__name__}")
+    fm, body_tail = embeddings.read_frontmatter(path)
     fm["topic"] = slug
     fm["cluster_id"] = cluster_id
     yaml_body = yaml.safe_dump(
@@ -526,7 +511,6 @@ def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
         allow_unicode=True,
         default_flow_style=False,
     ).rstrip("\n")
-    body_tail = "\n".join(lines[end + 1 :])
     rendered = f"{_FRONTMATTER_FENCE}\n{yaml_body}\n{_FRONTMATTER_FENCE}\n{body_tail}"
     if not rendered.endswith("\n"):
         rendered += "\n"
@@ -591,21 +575,12 @@ def _iter_channels_from_raw() -> dict[str, dict[str, str]]:
     are logged and skipped, never aborting the walk. Channel ids that are non-string, empty, or contain
     path separators / `..` are rejected for filesystem safety.
     """
-    import yaml  # noqa: PLC0415
-
     channels: dict[str, dict[str, str]] = {}
     for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
         try:
-            text = path.read_text(encoding="utf-8")
-            lines = text.splitlines()
-            if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
-                raise ValueError("missing frontmatter fence")
-            end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
-            fm = yaml.safe_load("\n".join(lines[1:end]))
-        except (ValueError, StopIteration, yaml.YAMLError, OSError) as exc:
+            fm, _ = embeddings.read_frontmatter(path)
+        except (ValueError, OSError) as exc:
             logger.warning(f"Skipping {path} during creator scan: {exc}")
-            continue
-        if not isinstance(fm, dict):
             continue
         for entry in fm.get("channels") or []:
             if not isinstance(entry, dict):

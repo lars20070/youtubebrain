@@ -30,7 +30,9 @@ Atomic write protocol: each of the three files is first written to a `*.tmp` sib
 
 ## Parsing rules
 
-[[src/youtubebrain/embeddings.py#parse_raw_markdown]] reads the YAML frontmatter via pyyaml, then splits the body on `^## (Summary|Description|Transcript)$` to recover section bodies.
+[[src/youtubebrain/embeddings.py#read_frontmatter]] reads fenced YAML frontmatter and returns `(mapping, body)`; [[src/youtubebrain/embeddings.py#parse_raw_markdown]] splits the body on `^## (Summary|Description|Transcript)$` to recover section bodies.
+
+`read_frontmatter` raises `ValueError` on missing or unclosed fences, malformed YAML, or a non-mapping top-level value. The clusters step reuses the same helper for topic injection and creator scanning.
 
 The literal placeholder `_(unavailable)_` rendered by [[ingest#Markdown writer]] is recognized via [[src/youtubebrain/embeddings.py#_normalize_section]] and collapsed to `None` so it is never embedded as if it were content. Empty section bodies are also normalized to `None`. The transcript section is parsed but not used by [[embeddings#Text composition]].
 
