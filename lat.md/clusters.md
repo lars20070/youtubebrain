@@ -18,7 +18,7 @@ flowchart TD
     Fit --> Model[(bertopic_model/)]
     Topics --> Wiki[(wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md)]
     Assign --> RawFM[raw/&lt;id&gt;.md frontmatter: topic + cluster_id]
-    RawFM --> Creators[(wiki/creators/&lt;channel_id&gt;.md)]
+    RawChannels[raw/&lt;id&gt;.md channels list] --> Creators[(wiki/creators/&lt;channel_id&gt;.md)]
 ```
 
 ## CLI entry
