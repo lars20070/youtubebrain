@@ -75,7 +75,11 @@ This is required so the root-initialised named volume mounted there ([[wiki#Sand
 
 It injects the OpenRouter key, mounts the vault, and aggressively confines the agent so the AGENTS.md rules are enforced by the kernel, not just by prompt.
 
-`env_file: .env` injects `OPENROUTER_API_KEY` (required) into the container, and `HOME` is set to `/home/node` so Pi finds its state directory.
+### Pi environment
+
+Scoped env file for the Pi sandbox so only OpenRouter credentials enter the container; pipeline secrets stay on the host.
+
+The Python pipeline (steps 1–6) reads [`.env`](../.env) via `load_dotenv()`. The Pi sandbox uses [`.env.pi`](../.env.pi) — copy from [`.env.pi.example`](../.env.pi.example) — containing only `OPENROUTER_API_KEY` (required). Pi hardcodes the OpenRouter base URL (`https://openrouter.ai/api/v1`); `OPENROUTER_BASE_URL` in `.env` is for the Python pipeline only (step 3 summaries). [`compose.yaml`](../compose.yaml) sets `env_file: .env.pi`; `HOME` is set to `/home/node` so Pi finds its state directory.
 
 ### Mount layout
 

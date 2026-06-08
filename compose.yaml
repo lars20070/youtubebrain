@@ -5,9 +5,9 @@ services:
       dockerfile: Dockerfile.pi
     image: pi-sandbox
 
-    # Make sure OPENROUTER_API_KEY is set in the .env file.
+    # Make sure OPENROUTER_API_KEY is set in .env.pi (see .env.pi.example).
     env_file:
-      - .env
+      - .env.pi
     environment:
       HOME: /home/node
 

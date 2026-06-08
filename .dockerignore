@@ -1,0 +1,7 @@
+# Pi sandbox build context (Dockerfile.pi has no COPY; excludes leak surface and bloat).
+.env
+.env.*
+.git
+Markdown/
+.venv/
+**/__pycache__
