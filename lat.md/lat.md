@@ -8,3 +8,4 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[embeddings]] — Compute sentence-transformer embeddings of title + summary/description per raw markdown
 - [[clusters]] — UMAP + HDBSCAN + BERTopic over the embedding store, with LLM-named topics
 - [[provider]] — Build the pydantic-ai model dispatched by the PROVIDER env var
+- [[wiki]] - Compile wiki using the Pi agent and the `fill-` skills.
