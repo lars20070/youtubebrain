@@ -6,9 +6,11 @@ Unlike stages 1–6, this stage is not a Python CLI tool. It is a sandboxed LLM 
 
 ## Sandbox harness
 
-`compile-wiki.sh` builds `Dockerfile.pi` (a `node` base with the `@earendil-works/pi-coding-agent` CLI) and runs the agent under strict container isolation.
+`compile-wiki.sh` is a thin launcher over `compose.yaml`: it runs `docker compose build` then `docker compose run --rm pi-sandbox` with the per-invocation agent CLI args.
 
-Isolation flags: `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only` rootfs, non-root `--user 1000:1000`, plus `--pids-limit` / `--memory` / `--cpus` resource caps.
+All container isolation, resource, mount, and env config lives declaratively in `compose.yaml` (the image is `Dockerfile.pi`, a `node` base with the `@earendil-works/pi-coding-agent` CLI). Only the agent args — provider/model/tools and the variable `-p` prompt — stay in the script.
+
+Isolation: `cap_drop: [ALL]`, `security_opt: [no-new-privileges]`, `read_only` rootfs, non-root `user: "1000:1000"`, plus `pids_limit` / `mem_limit` / `cpus` resource caps. `OPENROUTER_API_KEY` is supplied via `env_file: .env` (git-ignored), and `HOME=/home/node` makes the tmpfs-backed home writable under the read-only rootfs.
 
 Mounts enforce least privilege over the vault: `Markdown/raw` and `Markdown/.pi` are bind-mounted read-only, `Markdown/AGENTS.md` is read-only, and only `Markdown/wiki` is writable. A named volume (`pi-agent-home`) persists the agent's own state across runs.
 
