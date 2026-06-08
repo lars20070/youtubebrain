@@ -14,7 +14,7 @@ The steps below read `Takeout/YouTube and YouTube Music/history/watch-history.js
 
 ### Run the pipeline
 
-Six invocations in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. See this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files.
+Seven steps in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. Steps 1–6 are the Python pipeline (see this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files); step 7 compiles the wiki (see [wiki](lat.md/wiki.md)).
 
 ```bash
 uv run ingest
@@ -23,6 +23,7 @@ uv run summaries
 uv run ingest
 uv run embed
 uv run cluster
+./compile-wiki.sh
 ```
 
 1. `uv run ingest` — fetch descriptions (YouTube Data API), write initial `Markdown/raw/<id>.md` with placeholder Summary / Transcript sections.
@@ -31,4 +32,5 @@ uv run cluster
 4. `uv run ingest` — second pass; rewrites `Markdown/raw/<id>.md` with the now-cached transcripts and summaries folded in.
 5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
 6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
+7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `OPENROUTER_API_KEY` in `.env`. Do not re-run `cluster` after this, or enriched pages are wiped.
 
