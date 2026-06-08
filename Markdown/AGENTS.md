@@ -100,31 +100,10 @@ When videos disagree (facts, predictions, opinions), do not pick a winner. Withi
 
 # Skills
 
-## Skill: FILL_TOPIC
+Page-enrichment procedures live as on-demand skills under `.pi/skills/`, each a directory with a `SKILL.md`. Only their descriptions stay in context; the full instructions load when a task matches or when you invoke `/skill:<name>`.
 
-Enrich one topic page so it reads as a standalone synthesis of everything its videos cover.
-
-When instructed to `FILL_TOPIC <slug>` (or given a `cluster_id`):
-
-1. Open the seeded page `wiki/topics/<slug>/<slug>.md` and read its frontmatter (`cluster_id`, `keywords`, `representative_ids`) and `## Videos` list.
-2. Read the `## Summary` (and `## Description` as needed) of the member videos — start with `representative_ids`, then sample broadly across the cluster. For large clusters (> ~150 videos) sample representatively rather than reading all.
-3. Rewrite the body below the heading into a 400–1000 word synthesis: the dominant themes, key claims, recurring people/tools/works, tensions and contradictions, and how the topic evolves over the watch period. Cross-link related `[[topics]]` and the relevant `[[creators|...]]`.
-4. **Preserve the `## Videos` list** (it is the page's source index). Keep video citations as relative Markdown links.
-5. Update/add the required frontmatter (`slug`, `tldr`, `aliases`, `sources`, `confidence`, `last_updated`). `sources` should list the video IDs you actually drew claims from.
-6. Append one line to `wiki/log.md`.
-7. Update the topic's entry in `wiki/index.md` (add it if missing).
-
-## Skill: FILL_CREATOR
-
-Give a channel a real page describing who they are and what their videos in this library are about.
-
-When instructed to `FILL_CREATOR <channel_id>`:
-
-1. Open the stub `wiki/creators/<channel_id>.md` (frontmatter `name`, `id`, `url`; empty body) — **preserve its frontmatter**.
-2. Find this channel's videos by scanning `raw/` frontmatter for `channels[].id == <channel_id>`. Read their summaries.
-3. Write a body: who the creator is, the subjects/format they cover, which `[[topics]]` they contribute to, and notable individual videos (cited as relative Markdown links). 150–500 words; scale to how many videos exist.
-4. Add the required frontmatter fields (`slug` = channel id, `tldr`, `aliases` including the human-readable name, `sources`, `confidence`, `last_updated`).
-5. Append one line to `wiki/log.md` and update the creator's entry in `wiki/index.md`.
+- **`fill-topic`** (`.pi/skills/fill-topic/SKILL.md`) — enrich one seeded topic page into a standalone 400–1000 word synthesis. Invoke as `/skill:fill-topic <slug>` (or a `cluster_id`).
+- **`fill-creator`** (`.pi/skills/fill-creator/SKILL.md`) — give a channel a real 150–500 word page from its `raw/` videos. Invoke as `/skill:fill-creator <channel_id>`.
 
 # index.md and log.md
 
