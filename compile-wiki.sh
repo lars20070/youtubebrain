@@ -4,10 +4,10 @@ set -euo pipefail
 # Build the Docker image for the Pi agent.
 docker build -t pi-sandbox -f Dockerfile.pi .
 
-# export OPENROUTER_API_KEY="sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx"
-
 # Run the container with some security and resource limits.
+# Make sure OPENROUTER_API_KEY is set in the .env file.
 docker run --rm -it \
+	--env-file .env \
 	--network=bridge \
 	--cap-drop=ALL \
 	--security-opt=no-new-privileges \
@@ -16,7 +16,6 @@ docker run --rm -it \
 	--pids-limit=512 --memory=4g --cpus=2 \
 	--user 1000:1000 \
 	--env HOME=/home/node \
-	--env OPENROUTER_API_KEY \
 	-v "$PWD/Markdown/raw:/workspace/raw:ro" \
 	-v "$PWD/Markdown/wiki:/workspace/wiki:rw" \
 	-v "$PWD/Markdown/.pi:/workspace/.pi:ro" \

@@ -20,10 +20,9 @@ lat.md/.cache
 # YouTube
 *-history.json
 Markdown/raw/*.md
-Markdown/wiki/**/*.md
 Markdown/.cache/
-Markdown/wiki/*.md
-Markdown/wiki_BACKUP/*.md
+Markdown/wiki/
+Markdown/wiki_BACKUP/
 Markdown/embeddings/*
 Markdown/clustering/*
 
