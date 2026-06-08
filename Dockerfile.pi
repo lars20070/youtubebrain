@@ -15,4 +15,6 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.78.1
 RUN mkdir -p /home/node/.pi/agent && chown -R node:node /home/node
 
 WORKDIR /workspace
+RUN chown node:node /workspace
+USER node
 ENTRYPOINT ["pi"]
