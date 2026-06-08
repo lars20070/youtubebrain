@@ -6,9 +6,9 @@ Unlike stages 1–6, this stage is not a Python CLI tool. It is a sandboxed LLM 
 
 ## Sandbox harness
 
-`compile-wiki.sh` is a thin launcher over `compose.yaml`: it runs `docker compose build` then `docker compose run --rm pi-sandbox` with the per-invocation agent CLI args.
+`compile-wiki.sh` is a thin launcher over `compose.yaml`: it runs `docker compose build` once, then loops over every `Markdown/wiki/topics/*/*.md` page, invoking `docker compose run --rm -T pi-sandbox` per page to run the `fill-topic` skill.
 
-All container isolation, resource, mount, and env config lives declaratively in `compose.yaml` (the image is `Dockerfile.pi`, a `node` base with the `@earendil-works/pi-coding-agent` CLI). Only the agent args — provider/model/tools and the variable `-p` prompt — stay in the script.
+All container isolation, resource, mount, and env config lives declaratively in `compose.yaml` (the image is `Dockerfile.pi`, a `node` base with the `@earendil-works/pi-coding-agent` CLI). Only the agent args — provider/model/tools and the variable `-p` prompt — stay in the script. Each host page path (`Markdown/wiki/...`) is rewritten to its in-container mount (`/workspace/wiki/...`) before being passed to the agent.
 
 Isolation: `cap_drop: [ALL]`, `security_opt: [no-new-privileges]`, `read_only` rootfs, non-root `user: "1000:1000"`, plus `pids_limit` / `mem_limit` / `cpus` resource caps. `OPENROUTER_API_KEY` is supplied via `env_file: .env` (git-ignored), and `HOME=/home/node` makes the tmpfs-backed home writable under the read-only rootfs.
 

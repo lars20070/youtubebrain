@@ -34,6 +34,7 @@ services:
     volumes:
       - ./Markdown/raw:/workspace/raw:ro
       - ./Markdown/wiki:/workspace/wiki:rw
+      - ./Markdown/clustering:/workspace/clustering:ro
       - ./Markdown/.pi:/workspace/.pi:ro
       - ./Markdown/AGENTS.md:/workspace/AGENTS.md:ro
       - pi-agent-home:/home/node/.pi/agent
