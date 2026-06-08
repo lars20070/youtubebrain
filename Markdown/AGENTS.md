@@ -35,9 +35,9 @@ url: https://www.youtube.com/watch?v=<video_id>
 title: '...'
 channels:
   - name: '...'
-    id: UC...
-    url: https://www.youtube.com/channel/UC...
-watch_time: '2026-03-16T04:21:58+00:00'
+    id: UC<channel_id>
+    url: https://www.youtube.com/channel/UC<channel_id>
+watch_time: '<YYYY-MM-DDThh:mm:ss+00:00>'
 topic: <topic-slug>
 cluster_id: <int>
 ---
@@ -55,7 +55,7 @@ cluster_id: <int>
 
 `clustering/` is produced by `uv run cluster` (BERTopic over local embeddings). Use it to know cluster membership and seed labels:
 
-- `clustering/topics.json` — one entry per cluster: `cluster_id`, `count`, `label` (kebab-case slug), `description`, `keywords`, `representative_ids`. `cluster_id: -1` is `outliers` — do not build a topic page for it.
+- `clustering/topics.json` — one entry per cluster: `cluster_id`, `count`, `label` (kebab-case slug), `description`, `keywords`, `representative_ids`. `cluster_id: -1` is `outliers` — a specific topic page for outliers exist at `wiki/topics/outliers/outliers.md`.
 - `clustering/assignments.json` — array of `cluster_id` per video, index-aligned with `clustering/embeddings`-order IDs.
 - `clustering/meta.json` — run metadata (model, counts, dates).
 
