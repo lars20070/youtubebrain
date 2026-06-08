@@ -23,4 +23,6 @@ docker run --rm -it \
 	-v "$PWD/Markdown/AGENTS.md:/workspace/AGENTS.md:ro" \
 	-v pi-agent-home:/home/node/.pi/agent \
 	pi-sandbox \
+	--provider openrouter \
+	--model qwen/qwen3.6-27b \
 	pi --help
