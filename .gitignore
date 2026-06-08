@@ -23,6 +23,7 @@ Markdown/raw/*.md
 Markdown/wiki/**/*.md
 Markdown/.cache/
 Markdown/wiki/*.md
+Markdown/wiki_BACKUP/*.md
 Markdown/embeddings/*
 Markdown/clustering/*
 

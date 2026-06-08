@@ -25,4 +25,5 @@ docker run --rm -it \
 	pi-sandbox \
 	--provider openrouter \
 	--model qwen/qwen3.6-27b \
-	pi --help
+	-xt bash \
+	-p "Read /workspace/wiki/topics/gravel-vs-road-bikes/gravel-vs-road-bikes.md Run the fill-topic skill exactly as defined in AGENTS.md."
