@@ -17,7 +17,7 @@ The steps below read `Takeout/YouTube and YouTube Music/history/watch-history.js
 Two env files, scoped by pipeline stage:
 
 ```bash
-cp .env.example .env      # steps 1–6 (Python pipeline)
+cp .env.example .env        # steps 1–6 (Python pipeline)
 cp .env.pi.example .env.pi  # step 7 (Pi wiki sandbox)
 ```
 
