@@ -3,15 +3,19 @@ set -euo pipefail
 
 # Build the Pi agent image. All container config (security, resource limits,
 # mounts, env) lives declaratively in compose.yaml.
+# @lat: [[wiki#Orchestration#Image build]]
 docker compose build
 
 # Compile wikis for all topics.
 # Make sure OPENROUTER_API_KEY is set in the .env file.
+# @lat: [[wiki#Orchestration#Batch loop over topics]]
 for page in Markdown/wiki/topics/*/*.md; do
 	# Map the host path (Markdown/wiki/...) to the in-container mount
 	# (/workspace/wiki/..., see compose.yaml). The agent only sees /workspace.
+	# @lat: [[wiki#Orchestration#Host-to-container path mapping]]
 	page_inside="/workspace/${page#Markdown/}"
 	echo "Compiling page $page_inside"
+	# @lat: [[wiki#Orchestration#Per-page agent invocation]]
 	docker compose run --rm -T pi-sandbox \
 		--provider openrouter \
 		--model qwen/qwen3.6-27b \

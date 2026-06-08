@@ -12,6 +12,7 @@ services:
       HOME: /home/node
 
     # Security hardening.
+    # @lat: [[wiki#Sandbox runtime#Security and resource limits]]
     network_mode: bridge
     cap_drop:
       - ALL
@@ -31,6 +32,7 @@ services:
       - /run
       - /home/node
 
+    # @lat: [[wiki#Sandbox runtime#Mount layout]]
     volumes:
       - ./Markdown/raw:/workspace/raw:ro
       - ./Markdown/wiki:/workspace/wiki:rw
