@@ -47,6 +47,8 @@ The Pi arguments are `--provider openrouter --model qwen/qwen3.6-27b -xt bash -p
 - `-p` (`--print`) is one-shot non-interactive mode: process the prompt and exit.
 - The prompt is deliberately thin — read the target page, then run `fill-topic`. The agent's real instructions come from auto-discovered [AGENTS.md](../Markdown/AGENTS.md) and the skill files (Pi loads both unless `--no-context-files` / `--no-skills` are passed, which they are not).
 
+The invocation also redirects stdin from `/dev/null` (`</dev/null`). With `-T` (no TTY), Pi treats stdin as a pipe and reads it to support `echo … | pi`, blocking on EOF that the terminal never sends — a silent startup hang before any LLM call. The prompt arrives via `-p`, so `/dev/null` (immediate EOF) lets the agent proceed.
+
 A fresh container per page enforces the schema's "process one page at a time" discipline ([[wiki#Agent schema#Absolute rules]]): each enrichment starts cold, with no carried-over state beyond what is on disk.
 
 ## Sandbox image

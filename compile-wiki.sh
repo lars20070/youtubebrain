@@ -25,5 +25,6 @@ for page in Markdown/wiki/topics/*/*.md; do
 		--provider openrouter \
 		--model qwen/qwen3.6-27b \
 		-xt bash \
-		-p "Read $page_inside carefully. Then run the fill-topic skill exactly as defined in AGENTS.md."
+		-p "Read $page_inside carefully. Then run the fill-topic skill exactly as defined in AGENTS.md." \
+		</dev/null
 done
