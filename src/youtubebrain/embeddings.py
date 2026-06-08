@@ -84,8 +84,12 @@ def _split_sections(body: str) -> dict[str, str]:
 
 
 # @lat: [[embeddings#Parsing rules]]
-def parse_raw_markdown(path: Path) -> tuple[str, str, str | None, str | None]:
-    """Parse a raw markdown file; return (video_id, title, summary, description)."""
+def read_frontmatter(path: Path) -> tuple[dict, str]:
+    """Read a markdown file; return (frontmatter_mapping, body_after_second_fence).
+
+    Raises ValueError on a missing/unclosed fence, malformed YAML, or a non-mapping
+    top-level value. Empty frontmatter is returned as {}.
+    """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
@@ -94,12 +98,26 @@ def parse_raw_markdown(path: Path) -> tuple[str, str, str | None, str | None]:
         end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
     except StopIteration as exc:
         raise ValueError(f"Unclosed frontmatter in {path}") from exc
-    fm = yaml.safe_load("\n".join(lines[1:end])) or {}
+    try:
+        fm = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Malformed frontmatter in {path}: {exc}") from exc
+    if fm is None:
+        fm = {}
+    elif not isinstance(fm, dict):
+        raise ValueError(f"Malformed frontmatter in {path}: expected mapping but got {type(fm).__name__}")
+    body = "\n".join(lines[end + 1 :])
+    return fm, body
+
+
+# @lat: [[embeddings#Parsing rules]]
+def parse_raw_markdown(path: Path) -> tuple[str, str, str | None, str | None]:
+    """Parse a raw markdown file; return (video_id, title, summary, description)."""
+    fm, body = read_frontmatter(path)
     video_id = fm.get("id")
     title = fm.get("title")
     if not isinstance(video_id, str) or not isinstance(title, str):
         raise ValueError(f"Frontmatter must include string `id` and `title` in {path}")
-    body = "\n".join(lines[end + 1 :])
     sections = _split_sections(body)
     summary = _normalize_section(sections.get("Summary"))
     description = _normalize_section(sections.get("Description"))

@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 .env
 .env.backup
+.env.pi
 *.log
 .coverage*
 *.egg-info/
@@ -20,9 +21,9 @@ lat.md/.cache
 # YouTube
 *-history.json
 Markdown/raw/*.md
-Markdown/wiki/**/*.md
 Markdown/.cache/
-Markdown/wiki/*.md
+Markdown/wiki/
+Markdown/wiki_BACKUP/
 Markdown/embeddings/*
 Markdown/clustering/*
 

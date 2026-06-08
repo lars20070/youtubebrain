@@ -1,0 +1,45 @@
+services:
+  pi-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.pi
+    image: pi-sandbox
+
+    # Make sure OPENROUTER_API_KEY is set in .env.pi (see .env.pi.example).
+    env_file:
+      - .env.pi
+    environment:
+      HOME: /home/node
+
+    # Security hardening.
+    # @lat: [[wiki#Sandbox runtime#Security and resource limits]]
+    network_mode: bridge
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    read_only: true
+    user: "1000:1000"
+
+    # Resource limits.
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 2
+
+    # Writable scratch space on the read-only rootfs.
+    tmpfs:
+      - /tmp
+      - /run
+      - /home/node
+
+    # @lat: [[wiki#Sandbox runtime#Mount layout]]
+    volumes:
+      - ./Markdown/raw:/workspace/raw:ro
+      - ./Markdown/wiki:/workspace/wiki:rw
+      - ./Markdown/clustering:/workspace/clustering:ro
+      - ./Markdown/.pi:/workspace/.pi:ro
+      - ./Markdown/AGENTS.md:/workspace/AGENTS.md:ro
+      - pi-agent-home:/home/node/.pi/agent
+
+volumes:
+  pi-agent-home:

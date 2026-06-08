@@ -13,7 +13,7 @@ Six invocations across five tools — `ingest` is run twice because it both *see
 3. `uv run summaries` — overnight LLM worker that reads `Markdown/.cache/descriptions.json` from step 1 and `Markdown/.cache/transcripts.sqlite` from step 2, and fills `Markdown/.cache/summaries.sqlite`.
 4. `uv run ingest` — second pass; same command, but now the transcripts and summaries caches are populated, so the re-written `Markdown/raw/<id>.md` files contain real Summary and Transcript text. This step is required for the next stage to embed prose instead of placeholders.
 5. `uv run embed` — encodes `title + summary` (fallback `title + description`) into `Markdown/embeddings/`.
-6. `uv run cluster` — UMAP + HDBSCAN via BERTopic over the embedding store, with one LLM call per cluster; writes `Markdown/clustering/` and `Markdown/wiki/topics/`.
+6. `uv run cluster` — UMAP + HDBSCAN via BERTopic over the embedding store, with one LLM call per cluster; writes `Markdown/clustering/`, `Markdown/wiki/topics/`, and `Markdown/wiki/creators/`.
 
 ### Prerequisites per stage
 
@@ -26,7 +26,7 @@ Each row lists what must exist on disk before the tool will produce a useful res
 | 3. `summaries`    | `Takeout/.../watch-history.json`, configured `PROVIDER`/`MODEL`            | `Markdown/.cache/descriptions.json`, `Markdown/.cache/transcripts.sqlite`                | `Markdown/.cache/summaries.sqlite`                                                                                               |
 | 4. `ingest` (re-run) | same as step 1                                                          | `Markdown/.cache/{transcripts.sqlite, summaries.sqlite}` now populated                   | overwrites `Markdown/raw/<id>.md` with Summary + Transcript bodies                                                               |
 | 5. `embed`        | `Markdown/raw/<id>.md` (at least one file)                                 | —                                                                                        | `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}`                                                                      |
-| 6. `cluster`      | `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}`                | `Markdown/raw/<id>.md` (used for representative-doc titles; missing files do not abort)  | `Markdown/clustering/{assignments,topics,meta}.json` + `bertopic_model/`; `Markdown/wiki/topics/<slug>/<slug>.md`; injects `topic` + `cluster_id` into each raw markdown |
+| 6. `cluster`      | `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}`                | `Markdown/raw/<id>.md` (used for representative-doc titles + channels list; missing files do not abort)  | `Markdown/clustering/{assignments,topics,meta}.json` + `bertopic_model/`; `Markdown/wiki/topics/<slug>/<slug>.md`; `Markdown/wiki/creators/<channel_id>.md`; injects `topic` + `cluster_id` into each raw markdown |
 
 The "soft input" column documents the implementation contract: each tool reads these paths if present but works without them — see [[ingest#Markdown writer]] for the placeholder rendering, [[transcripts#Read API]] and [[summaries#Read API]] for the missing-DB-returns-None contract, and [[summaries#Skipped when no content]] for the path where missing description + missing transcript produces a `skipped` row.
 
@@ -62,7 +62,9 @@ flowchart TD
     Emb -->|step 6| Cluster["uv run cluster"]
     Cluster --> Clu[("Markdown/clustering/{assignments,topics,meta}.json + bertopic_model/")]
     Cluster --> Wiki[("Markdown/wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md")]
+    Cluster --> Creators[("Markdown/wiki/creators/&lt;channel_id&gt;.md")]
     Cluster -.->|inject topic + cluster_id frontmatter| Raw
+    Raw -.->|channels list| Creators
 ```
 
 ## Stage details
@@ -116,9 +118,9 @@ Details: [[embeddings]].
 
 ### 6. cluster
 
-[[src/youtubebrain/clusters.py#main]] reduces the embedding store with UMAP, clusters with HDBSCAN via BERTopic, then issues one LLM call per cluster to produce a human-readable kebab-case label + description, and finally materialises every cluster as a wiki page.
+[[src/youtubebrain/clusters.py#main]] reduces the embedding store with UMAP, clusters with HDBSCAN via BERTopic, issues one LLM call per cluster for a kebab-case label, then writes a wiki topic page per cluster and a creator page per channel.
 
 Hard reads: `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}` (raises `ValueError("no embeddings ...")` if missing or empty; raises `ValueError("embedding model changed ...")` if `embeddings/meta.json.model` differs from a prior `clustering/meta.json.embedding_model`); reachable LLM provider per `PROVIDER` / `MODEL`.
-Soft reads: `Markdown/raw/<id>.md` (used by [[clusters#Representative-doc plumbing]] to recover titles and rep-doc texts; missing files do not abort the run).
-Writes: `Markdown/clustering/{assignments.json, topics.json, meta.json}` + `Markdown/clustering/bertopic_model/`, `Markdown/wiki/topics/<slug>/<slug>.md` (one page per cluster including a synthetic `outliers` page when present), and injects `topic` + `cluster_id` into every `Markdown/raw/<id>.md` frontmatter.
+Soft reads: `Markdown/raw/<id>.md` (used by [[clusters#Representative-doc plumbing]] to recover titles and rep-doc texts, and by [[clusters#Wiki creators]] to read each video's `channels` list; missing files do not abort the run).
+Writes: `Markdown/clustering/{assignments.json, topics.json, meta.json}` + `Markdown/clustering/bertopic_model/`, `Markdown/wiki/topics/<slug>/<slug>.md` (one page per cluster including a synthetic `outliers` page when present), `Markdown/wiki/creators/<channel_id>.md` (one preserve-existing stub per distinct channel), and injects `topic` + `cluster_id` into every `Markdown/raw/<id>.md` frontmatter.
 Details: [[clusters]].
