@@ -302,6 +302,30 @@ def test_meta_records_run_summary_fields(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert meta["embedding_model"] == "stub-model"
 
 
+# @lat: [[clusters#Tests#Meta lists cluster sizes]]
+def test_meta_lists_cluster_sizes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """meta.json carries a `clusters` table of {cluster_id, label, count}, count-desc, outliers included."""
+    emb_dir, _raw, _cl = _patch_stores(monkeypatch, tmp_path)
+    ids = [f"vid{i:02d}" for i in range(6)]
+    _seed_embeddings(emb_dir, ids)
+    monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
+
+    topic_model = _StubTopicModel(
+        [0, 0, 1, 1, -1, 0],
+        {0: {"keywords": ["a"], "rep_docs": []}, 1: {"keywords": ["b"], "rep_docs": []}},
+    )
+    _patch_pipeline(monkeypatch, topic_model, _StubAgent())
+
+    clusters.cluster_all()
+
+    meta = json.loads(clusters.META_JSON_PATH.read_text(encoding="utf-8"))
+    assert meta["clusters"] == [
+        {"cluster_id": 0, "label": "a-cluster", "count": 3},
+        {"cluster_id": 1, "label": "b-cluster", "count": 2},
+        {"cluster_id": -1, "label": "outliers", "count": 1},
+    ]
+
+
 # @lat: [[clusters#Tests#BERTopic save records embedding model name]]
 def test_save_atomic_passes_embedding_model_name_to_bertopic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """save_atomic forwards `meta['embedding_model']` to topic_model.save(save_embedding_model=...)."""

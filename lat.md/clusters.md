@@ -31,6 +31,8 @@ Pipeline order is documented in [[overview#Run order]] — `cluster` is always t
 
 [[src/youtubebrain/clusters.py#save_atomic]] writes four artefacts under `Markdown/clustering/`: `assignments.json` (a JSON list of int cluster ids row-aligned to `ids.json`, `-1` for outliers), `topics.json` (a list of [[src/youtubebrain/clusters.py#TopicInfo]]), `meta.json`, and the `bertopic_model/` directory.
 
+Alongside the run-summary scalars, `meta.json` carries a `clusters` size table built by [[src/youtubebrain/clusters.py#_cluster_size_table]]: one `{cluster_id, label, count}` entry per cluster — including the outlier pseudo-cluster `-1` — sorted by `count` descending (cluster_id ascending on ties), so cluster sizes are readable without parsing `topics.json`.
+
 Atomic write protocol mirrors [[embeddings#Storage layout]]: each json file is written to a `*.tmp` sibling then `os.replace`-d into place in order assignments → topics → meta. The BERTopic model is saved to a sibling `bertopic_model.tmp/` directory, then the existing `bertopic_model/` is removed and the tmp directory replaced into place. A failing mid-write step never leaves `*.tmp` siblings — [[src/youtubebrain/clusters.py#save_atomic]]'s `finally` block sweeps them up. [[src/youtubebrain/clusters.py#load_existing]] reads the trio back; any schema mismatch is logged and treated as empty so the next run rebuilds cleanly. The BERTopic model is persisted with `prediction_data=True` so a future Phase 5 `partial_fit` over new embedding rows is unblocked.
 
 `topic_model.save(...)` receives `save_embedding_model=meta["embedding_model"]` — the SentenceTransformer id read from `Markdown/embeddings/meta.json` and threaded through the run's meta dict. This stores a pointer (the model id string) inside the BERTopic artefact rather than re-serialising the weights, which silences BERTopic's "saving without explicitly defining an embedding model" warning and makes the saved model self-describing on reload. When `meta["embedding_model"]` is missing or non-string the call falls back to `False` and the warning is allowed to surface, since there is genuinely no encoder id to record.
@@ -158,6 +160,10 @@ After `cluster_all`, the saved `assignments.json` has the same length as `ids.js
 ### Meta records run summary
 
 `meta.json` records `n_clusters`, `n_outliers`, `min_cluster_size`, `llm_model`, `bertopic_version`, and the resolved `embedding_model` so a future run can compare against it.
+
+### Meta lists cluster sizes
+
+`meta.json` carries a `clusters` list of `{cluster_id, label, count}` sorted by count descending, with the outlier cluster (`-1`, label `outliers`) included as its own entry.
 
 ### BERTopic save records embedding model name
 

@@ -627,6 +627,16 @@ def write_wiki_creators() -> tuple[int, int]:
     return n_created, n_existing
 
 
+# @lat: [[clusters#Storage layout]]
+def _cluster_size_table(topics: list[TopicInfo]) -> list[dict[str, Any]]:
+    """Build the meta.json `clusters` list: {cluster_id, label, count} per topic.
+
+    Sorted by count descending, cluster_id ascending on ties. Includes the outlier
+    pseudo-cluster (-1) when present, since `topics` already holds its synthetic row.
+    """
+    return [{"cluster_id": t.cluster_id, "label": t.label, "count": t.count} for t in sorted(topics, key=lambda t: (-t.count, t.cluster_id))]
+
+
 # @lat: [[clusters#CLI entry]]
 def cluster_all() -> int:
     """Load embeddings, fit BERTopic, label clusters via LLM, save atomically. Returns n_clusters excl. outliers."""
@@ -698,6 +708,7 @@ def cluster_all() -> int:
         "llm_model": os.environ.get("MODEL"),
         "label_concurrency": concurrency,
         "bertopic_version": _bertopic_version(),
+        "clusters": _cluster_size_table(topics),
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
