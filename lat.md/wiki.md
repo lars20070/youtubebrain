@@ -136,7 +136,7 @@ It also mandates upkeep: always keep `index.md` and `log.md` in sync with every 
 
 Every wiki page the agent writes must carry required frontmatter, while **preserving** the machine-written fields the seeder added (`label`, `cluster_id`, `count`, `keywords`, `representative_ids`, `name`, `url`).
 
-The agent adds: `slug` (kebab-case; folder name for topics, channel id for creators), `tldr` (≤200-char load-bearing summary), `aliases` (alternative names, to prevent duplicate pages), `sources` (the `raw/` video IDs backing the claims), `confidence` (`low`/`medium`/`high`), and `last_updated` (`YYYY-MM-DD`).
+The agent adds: `slug` (kebab-case; folder name for topics, channel id for creators), `tldr` (≤200-char load-bearing summary), `aliases` (alternative names, to prevent duplicate pages), `sources` (the `raw/` video IDs backing the claims), `confidence` (`low`/`medium`/`high`), and `last_updated` (`YYYY-MM-DDThh:mm:ss+00:00`).
 
 ### Linking
 
@@ -170,4 +170,4 @@ Its steps: open the stub `creators/<channel_id>.md` (preserving its `name`/`id`/
 
 Two vault-level files keep the wiki navigable and auditable, and AGENTS.md requires the agent to update both on every write. The seeder leaves them empty; the agent populates them as it enriches pages.
 
-`wiki/index.md` is a content-oriented catalog grouped by section (Topics, Creators, Series, Syntheses, Questions), one line per page: the `[[slug]]` (or alias), its `tldr`, and a source count. `wiki/log.md` is append-only, newest entries at the bottom, one grep-friendly line per action — `## [YYYY-MM-DD] <skill> | <slug> | <short note>` — and past lines are never edited or deleted.
+`wiki/index.md` is a content-oriented catalog grouped by section (Topics, Creators, Series, Syntheses, Questions), one line per page: the `[[slug]]` (or alias), its `tldr`, and a source count. `wiki/log.md` is append-only, newest entries at the bottom, one grep-friendly line per action — `## [YYYY-MM-DDThh:mm:ss+00:00] <skill> | <slug> | <short note>` — and past lines are never edited or deleted.

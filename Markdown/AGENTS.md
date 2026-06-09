@@ -77,7 +77,7 @@ Preserve any machine-written fields already present (`label`, `cluster_id`, `cou
 - `aliases`: list of alternative names the page may be referred to by (prevents duplicate pages for one entity).
 - `sources`: list of `raw/` video IDs that back this page's claims.
 - `confidence`: `low` | `medium` | `high` — your honesty about how well the sources support the synthesis.
-- `last_updated`: `YYYY-MM-DD`.
+- `last_updated`: `YYYY-MM-DDThh:mm:ss+00:00`.
 
 ## Linking
 
@@ -109,7 +109,7 @@ Page-enrichment procedures live as on-demand skills under `.pi/skills/`, each a 
 
 - `wiki/index.md` — content-oriented catalog, grouped by section (Topics, Creators, Series, Syntheses, Questions). One line per page: `[[slug]]` (or alias) — its `tldr` — source count. Keep it current on every write.
 - `wiki/log.md` — append-only, newest entries at the bottom, one line per action, grep-friendly:
-  `## [YYYY-MM-DD] <skill> | <slug> | <short note>`
+  `## [YYYY-MM-DDThh:mm:ss+00:00] <skill> | <slug> | <short note>`
   Never edit or delete past log lines.
 
 # Working Discipline
