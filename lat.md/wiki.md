@@ -16,7 +16,7 @@ Because cluster ids and labels are not stable across runs ([[clusters#Re-cluster
 
 [compile-wiki.sh](../compile-wiki.sh) is the host-side driver: it builds the sandbox image once, then enriches every seeded topic page in its own disposable container.
 
-It runs under `set -euo pipefail`, so any failed build or container run aborts the whole batch.
+It runs under `set -euo pipefail`, so any failed build or container run aborts the whole batch. Re-running after such an abort resumes where it stopped, because already-enriched pages are skipped (see [[wiki#Orchestration#Resumable skip of already-filled pages]]).
 
 ### Image build
 
@@ -29,6 +29,14 @@ All container configuration (security, resource limits, mounts, env) lives decla
 The script globs `Markdown/wiki/topics/*/*.md` — every seeded `<slug>/<slug>.md` page from [[clusters#Wiki topics#Page rendering]], including the synthetic `outliers` page — and processes them one at a time.
 
 Only topic pages are driven in batch, and only via the `fill-topic` skill. The `fill-creator` skill exists for creator pages but is **not** wired into this loop; creators are filled on demand (see [[wiki#Skills#fill-creator]]).
+
+### Resumable skip of already-filled pages
+
+Before invoking the agent, the loop skips any page that already carries a `last_updated:` frontmatter line, so re-running the script after an interruption resumes at the first un-enriched page instead of redoing work.
+
+`last_updated` is the completion marker: it is one of the fields `fill-topic` stamps only on completion ([[wiki#Agent schema#Page frontmatter]]) and is absent from machine-seeded stubs. The page is therefore its own progress record — no separate manifest to keep in sync — and the check self-heals: blank or delete a page's frontmatter and the next run re-enriches it.
+
+The `grep -q '^last_updated:' "$page"` sits inside an `if`, so a non-match (non-zero exit) is consumed by the `if` and does not trip `set -euo pipefail`; only a match `continue`s past the page (logging `Skipping already-filled page …`). This is the mitigation for the abort-on-failure behavior: a failed container stops the batch, and the operator simply re-runs the script to continue.
 
 ### Host-to-container path mapping
 

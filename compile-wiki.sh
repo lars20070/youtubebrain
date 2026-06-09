@@ -15,6 +15,12 @@ docker compose build
 # Make sure OPENROUTER_API_KEY is set in the .env.pi file.
 # @lat: [[wiki#Orchestration#Batch loop over topics]]
 for page in Markdown/wiki/topics/*/*.md; do
+	# Skip pages fill-topic has already enriched (it stamps last_updated on completion).
+	# @lat: [[wiki#Orchestration#Resumable skip of already-filled pages]]
+	if grep -q '^last_updated:' "$page"; then
+		echo "Skipping already-filled page $page"
+		continue
+	fi
 	# Map the host path (Markdown/wiki/...) to the in-container mount
 	# (/workspace/wiki/..., see compose.yaml). The agent only sees /workspace.
 	# @lat: [[wiki#Orchestration#Host-to-container path mapping]]
