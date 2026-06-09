@@ -6,7 +6,9 @@ The primary input is `Takeout/YouTube and YouTube Music/history/watch-history.js
 
 ## Run order
 
-Six invocations across five tools — `ingest` is run twice because it both *seeds* the descriptions cache the summarizer needs and *folds* the resulting transcripts and summaries back into the raw markdown that the embedder reads.
+Eight steps end to end: six Python invocations across five tools (steps 1–6), then `./compile-wiki.sh` (step 7) and the optional `./index-wiki.sh` search index (step 8).
+
+`ingest` is run twice because it both *seeds* the descriptions cache the summarizer needs and *folds* the resulting transcripts and summaries back into the raw markdown that the embedder reads.
 
 1. `uv run ingest` — first pass; fetches video descriptions via the YouTube Data API and writes `Markdown/raw/<id>.md` files whose Summary and Transcript sections are still `_(unavailable)_`.
 2. `uv run transcripts` — overnight worker that fills `Markdown/.cache/transcripts.sqlite`. Independent of step 1; may run in parallel.
@@ -14,8 +16,8 @@ Six invocations across five tools — `ingest` is run twice because it both *see
 4. `uv run ingest` — second pass; same command, but now the transcripts and summaries caches are populated, so the re-written `Markdown/raw/<id>.md` files contain real Summary and Transcript text. This step is required for the next stage to embed prose instead of placeholders.
 5. `uv run embed` — encodes `title + summary` (fallback `title + description`) into `Markdown/embeddings/`.
 6. `uv run cluster` — UMAP + HDBSCAN via BERTopic over the embedding store, with one LLM call per cluster; writes `Markdown/clustering/`, `Markdown/wiki/topics/`, and `Markdown/wiki/creators/`.
-
-Optional host-side step after [[wiki]] compilation: `./index-wiki.sh` builds a repo-local qmd search index over curated wiki pages and registers the `qmd` MCP server (see [[search]]).
+7. `./compile-wiki.sh` — runs the Pi agent in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (see [[wiki]]).
+8. `./index-wiki.sh` — optional host-side step; builds a repo-local qmd search index over curated wiki pages and registers the `qmd` MCP server (see [[search]]).
 
 ### Prerequisites per stage
 
@@ -30,11 +32,15 @@ Each row lists what must exist on disk before the tool will produce a useful res
 | 5. `embed`        | `Markdown/raw/<id>.md` (at least one file)                                 | —                                                                                        | `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}`                                                                      |
 | 6. `cluster`      | `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}`                | `Markdown/raw/<id>.md` (used for representative-doc titles + channels list; missing files do not abort)  | `Markdown/clustering/{assignments,topics,meta}.json` + `bertopic_model/`; `Markdown/wiki/topics/<slug>/<slug>.md`; `Markdown/wiki/creators/<channel_id>.md`; injects `topic` + `cluster_id` into each raw markdown |
 
+Steps 7–8 prerequisites (Docker + `.env.pi`; qmd + Node) are documented in [[wiki]] and [[search]].
+
 The "soft input" column documents the implementation contract: each tool reads these paths if present but works without them — see [[ingest#Markdown writer]] for the placeholder rendering, [[transcripts#Read API]] and [[summaries#Read API]] for the missing-DB-returns-None contract, and [[summaries#Skipped when no content]] for the path where missing description + missing transcript produces a `skipped` row.
 
 ## Workflow diagram
 
-The diagram shows the canonical six-step path: solid arrows are required edges, dotted arrows mark the step-4 re-ingest that folds the caches into raw markdown.
+The diagram shows the canonical six-step Python path (steps 1–6): solid arrows are required edges, dotted arrows mark the step-4 re-ingest that folds the caches into raw markdown.
+
+Steps 7–8 (wiki compile, search index) are not in the diagram; see [[wiki]] and [[search]].
 
 ```mermaid
 flowchart TD
@@ -72,6 +78,8 @@ flowchart TD
 ## Stage details
 
 One section per tool, listing the underlying entry point, what it reads, and what it writes. Reads are split into hard requirements (raises if missing) and soft lookups (graceful fallback) per the table above.
+
+Steps 7–8 (`compile-wiki`, `index-wiki`) are not Python tools; they have dedicated docs — see [[wiki]] and [[search]].
 
 ### 1. ingest
 

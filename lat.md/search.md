@@ -73,7 +73,7 @@ MCP tools: `structured_search` (lex/vec/hyde), `get`, `multi_get`, `status`. CLI
 
 ## Lifecycle
 
-After [[wiki]] enrichment (`./compile-wiki.sh`), run `./index-wiki.sh` to refresh the search index. Re-run whenever wiki pages change. Query via Claude Code MCP or `XDG_CACHE_HOME=$PWD/.qmd qmd query "…"`.
+[[wiki]] enrichment (`./compile-wiki.sh`) is step 7; indexing with `./index-wiki.sh` is the optional step 8. Re-run whenever wiki pages change. Query via Claude Code MCP or `XDG_CACHE_HOME=$PWD/.qmd qmd query "…"`.
 
 ## Verification
 

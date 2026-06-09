@@ -25,7 +25,7 @@ Edit `.env` with your YouTube API key, LLM provider, and embedding settings. Edi
 
 ### Run the pipeline
 
-Seven steps in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. Steps 1–6 are the Python pipeline (see this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files); step 7 compiles the wiki (see [wiki](lat.md/wiki.md)).
+Eight steps in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. Steps 1–6 are the Python pipeline (see this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files); step 7 compiles the wiki (see [wiki](lat.md/wiki.md)); step 8 (optional) indexes the wiki for local search (see [search](lat.md/search.md)).
 
 ```bash
 uv run ingest
@@ -35,6 +35,7 @@ uv run ingest
 uv run embed
 uv run cluster
 ./compile-wiki.sh
+./index-wiki.sh
 ```
 
 1. `uv run ingest` — fetch descriptions (YouTube Data API), write initial `Markdown/raw/<id>.md` with placeholder Summary / Transcript sections.
@@ -44,23 +45,4 @@ uv run cluster
 5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
 6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
 7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `.env.pi` (from `.env.pi.example`). Do not re-run `cluster` after this, or enriched pages are wiped.
-
-### Search the wiki (qmd)
-
-Optional eighth step after wiki compilation. Indexes curated wiki pages into a repo-local [qmd](https://github.com/tobi/qmd) search DB and exposes them to Claude Code via MCP (see [search](lat.md/search.md)).
-
-```bash
-npm install -g @tobilu/qmd@2.1.0   # tested version; Node required
-./index-wiki.sh                     # first run downloads embed model (~minutes)
-```
-
-Then reload MCP in Cursor/VS Code — [`.vscode/mcp.json`](.vscode/mcp.json) registers a `qmd` server alongside `lat`. The index lives in `.qmd/` (gitignored), not `~/.cache/qmd/`.
-
-**Claude Code CLI:** copy the `qmd` block from `.vscode/mcp.json` into a local `.mcp.json` (gitignored), replacing `${workspaceFolder}` with the absolute path to this repo's `.qmd` directory — CLI config does not expand workspace variables reliably.
-
-Re-run `./index-wiki.sh` whenever wiki pages change (after `./compile-wiki.sh` or manual edits). Example host-side query:
-
-```bash
-XDG_CACHE_HOME=$PWD/.qmd qmd query "anglo saxon migration"
-XDG_CACHE_HOME=$PWD/.qmd qmd search -c youtubebrain-wiki anglo-saxon --files
-```
+8. `./index-wiki.sh` — indexes curated wiki pages into a repo-local [qmd](https://github.com/tobi/qmd) search DB and exposes them via MCP. Requires qmd (`npm install -g @tobilu/qmd@2.1.0`). First run downloads an embedding model; on a large corpus `qmd embed` runs in repeated ~30-min passes until nothing is pending. Re-run after `./compile-wiki.sh` or manual wiki edits.
