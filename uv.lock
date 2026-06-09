@@ -787,7 +787,7 @@ wheels = [
 
 [[package]]
 name = "hdbscan"
-version = "0.8.43"
+version = "0.8.44"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
@@ -795,20 +795,20 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/6c/152c4c7831563488d360b2da03671631bb95431a19297a92178f65514cd5/hdbscan-0.8.43.tar.gz", hash = "sha256:cfe6e7e68f153c92cef3d19a86d29c1075f33774b1e97d284ba79b157506c8bb", size = 7089058, upload-time = "2026-05-13T03:09:18.567Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/51/b476849d27980d1ce5ba0a172891d37441b0112047894350951f6b169266/hdbscan-0.8.44.tar.gz", hash = "sha256:1ac6196fabdd42072284b60c9be7b9b504b5f4f25cf7a551a8af29a3c7963a4d", size = 7094270, upload-time = "2026-06-01T18:56:31.342Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/9c/bd448f5958cca0edbf30f3948c15094e982bc6f7db1d386a86de60ef2721/hdbscan-0.8.43-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:17ab1e971732aa53559b465edb4c1774d4a63ca950e2c3193aed0fb7c8985b48", size = 2584929, upload-time = "2026-05-13T03:08:24.667Z" },
-    { url = "https://files.pythonhosted.org/packages/fb/ed/dae4c06fda4f376c59f65b956b9b3423d87e36b2b8ebece8fdad2f274349/hdbscan-0.8.43-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3ed902db1ffe648622123a135ab4c7e9a82ddcb91589adeffc3346b27e99e109", size = 5880626, upload-time = "2026-05-13T03:09:20.96Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/c0/621a11eb37a488fa049844d869d3cb0b77677f85a69572652fdec585b9bb/hdbscan-0.8.43-cp311-cp311-win_amd64.whl", hash = "sha256:82a2288b5ed8056ab5f6df1ead0cb167740c5c2c4168cd490f944a7fe9b78d4a", size = 1952797, upload-time = "2026-05-13T03:09:03.141Z" },
-    { url = "https://files.pythonhosted.org/packages/51/33/56167699cec17079831ed7ae6233d38b3540c410048453ea0767bc06f29e/hdbscan-0.8.43-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:9084f82fcf0e66915141d82564f6cfaf8575fcdf500872678845bc98eac2dfc7", size = 2569190, upload-time = "2026-05-13T03:08:34.152Z" },
-    { url = "https://files.pythonhosted.org/packages/61/79/95d995a6100f74f439804c66534f9baaf888e62d7c957fbaf5ca67329195/hdbscan-0.8.43-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:35d4b564dcaf0093c1df9607d72e07bc5bc80d033fc57d6c971f80cf59f750d3", size = 5808558, upload-time = "2026-05-13T03:09:32.562Z" },
-    { url = "https://files.pythonhosted.org/packages/c5/85/927ba7f0a6e5cc71c1b6a818e63332dfee0c4c807f0aa57d2d3f6da9789c/hdbscan-0.8.43-cp312-cp312-win_amd64.whl", hash = "sha256:7ffb9e1dc706246d38f4ecf6a15d19160b5d5e06ec7a5e37d3c09b7415c376ee", size = 1937311, upload-time = "2026-05-13T03:08:58.868Z" },
-    { url = "https://files.pythonhosted.org/packages/38/f1/125d300380cde6761d84808670fa73153dc41c7ef742c90bcf838fce4a39/hdbscan-0.8.43-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:97a8f43c0081c5b15094234b5b854f92bdea2b93b8152c38e2f5ec69203177ab", size = 2559588, upload-time = "2026-05-13T03:08:30.054Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/2d/65a1f90f85f64888a55ad23353eed7f9fb41a26d84ea5774d5df8e6bad3c/hdbscan-0.8.43-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a3831c2c799360be302ddc011b9385ab1c836bcd3a4bea10cd91b7e4c0335d32", size = 5793238, upload-time = "2026-05-13T03:09:30.225Z" },
-    { url = "https://files.pythonhosted.org/packages/68/7a/13c7a3bb1c057c91ba68c19e3f4f87d59fde520f83dbdade88584f435cf1/hdbscan-0.8.43-cp313-cp313-win_amd64.whl", hash = "sha256:cbdf0d252c323fd76bc2fb656ed71ca5ed184494b9606d6dfb6f25fd7a2abbab", size = 1937269, upload-time = "2026-05-13T03:08:52.827Z" },
-    { url = "https://files.pythonhosted.org/packages/38/61/e72e1ca6f2c06bd463600c372cfeccbbda270307fed1df4d9f4c46b16f83/hdbscan-0.8.43-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:484f49639239bf57c58e7290da52ce6ba0ee87bf1212462523c4d6c1e631e104", size = 2582755, upload-time = "2026-05-13T03:08:26.208Z" },
-    { url = "https://files.pythonhosted.org/packages/1e/57/ef6360710177243916be0aa611fa495d47f9e320a33f8d43c32bc0fef738/hdbscan-0.8.43-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0ef9de8ddffe492c42e6bacbef0f88c9828f4408ff29572d1fa5a9f30eb7929a", size = 5766844, upload-time = "2026-05-13T03:09:35.75Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/d2/366e699e1fcb77a80bfa779775ae9c6f80638bdda7bbbd2c29f3add28bcd/hdbscan-0.8.43-cp314-cp314-win_amd64.whl", hash = "sha256:a81473c09bd68aeecc7fdab3afb8f9f49cc6066843f5629bfe176271a2db3607", size = 1956593, upload-time = "2026-05-13T03:08:48.932Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/75/7ea947869eeb877c3d2b23ce2cbfcc9c5e8e31dd10d81e04add53f3f0c7e/hdbscan-0.8.44-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:e83276c6147d1ec74359ac2d07b2df9d0deb5e248194660967bcde6437a8518c", size = 2603287, upload-time = "2026-06-01T18:55:43.43Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/99/17dd8a7e845504c3b8f9443bb1b15d20461c70c0c305186fa3526bb55277/hdbscan-0.8.44-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6089b8accd805a3a7409b20247e29e54dea6118785771127a4fc6c5eda24f0ef", size = 5929276, upload-time = "2026-06-01T18:56:33.065Z" },
+    { url = "https://files.pythonhosted.org/packages/13/8d/eec0040bd273c9e43409672c8cec1956775aca3ebafad8a9e3f5d25cfd80/hdbscan-0.8.44-cp311-cp311-win_amd64.whl", hash = "sha256:df6d6268022747a60c9990cecf446bc7a71621ff92bc51c86f5958d1cd451870", size = 1964877, upload-time = "2026-06-01T18:56:12.515Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/f0/4f719c1275158a13918124ce7d798be4b4ae2898469b467216fde974e443/hdbscan-0.8.44-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:cc4917a57f73984137bc6f14cddd1a140907102522174af8d8add42668a5e196", size = 2590501, upload-time = "2026-06-01T18:55:52.587Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/95/4f08d8adeba894453a057f1b87d24fb155e040601137cb82536d9708ff30/hdbscan-0.8.44-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d67f2b3628a80764a07fff3a994df2c6b2d9a6b9c8024edde7b36c184f6657f6", size = 5868686, upload-time = "2026-06-01T18:56:33.787Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/a2/959f617dbff9ebe0ef9b55f61c84b7ad00e5eb91b47b838b3a1a2bf0aa95/hdbscan-0.8.44-cp312-cp312-win_amd64.whl", hash = "sha256:29bffe0ef8a8191e6cd5af3dc7fdf5e7f6334eea8fa39ee8488f2f16911c1cdf", size = 1947427, upload-time = "2026-06-01T18:56:14.433Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/cb/c4d5c76145a053a7ac04d5106872ce44b199783a4249536c2d9f140c3c07/hdbscan-0.8.44-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:9256a7028f017b257c5eba05fe332a744a410c0dcb9971eaa9ed6c5efaac50d5", size = 2580855, upload-time = "2026-06-01T18:55:37.972Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/73/12786f8e999959dbf56dfd2b0e4a7e7cc3ccfdcf3a464b0f019bc93e9556/hdbscan-0.8.44-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3400d93a299228e86dec77cc114b834cdd48413f7999eaddaecba045c38ee915", size = 5850796, upload-time = "2026-06-01T18:56:40.535Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/83/02a8d5c03e1fa535965c1339ee3f4d2c0ffd30163904aa817a970d1200c9/hdbscan-0.8.44-cp313-cp313-win_amd64.whl", hash = "sha256:0f4fa78c76459e1e00282fd8d67a6834ca46ba232e38414f69bb1bacc2c263ce", size = 1947052, upload-time = "2026-06-01T18:57:01.255Z" },
+    { url = "https://files.pythonhosted.org/packages/15/7e/bd23accbaf40a4cc7a179c22129b81023b5daeb3a4d7af6c5f825f29e0ab/hdbscan-0.8.44-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:2351eb81f21491b5b50bdc5ecaa2d88f58608f51f5906774cb38747f21b18053", size = 2603654, upload-time = "2026-06-01T18:55:41.641Z" },
+    { url = "https://files.pythonhosted.org/packages/87/10/1b1379a3576e3d9af5c931f942d321017fd2129dad21bc850063706a8ec9/hdbscan-0.8.44-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f7ee278a8da6043671031079b245488ee27565f48a83616637dae0b2c4886ea1", size = 5817791, upload-time = "2026-06-01T18:56:40.999Z" },
+    { url = "https://files.pythonhosted.org/packages/db/ae/74d1aee2a7c6c39b16a8d4fa7aa3d029d7d08d0c5461d7b55f9619b48598/hdbscan-0.8.44-cp314-cp314-win_amd64.whl", hash = "sha256:5ea248dcaca951861e811411bf3eb9954f932f3a90c8bbe5629b5ee8479e011e", size = 1969244, upload-time = "2026-06-01T18:56:29.289Z" },
 ]
 
 [[package]]
@@ -3254,7 +3254,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bertopic", specifier = ">=0.16,<0.18" },
-    { name = "hdbscan", specifier = ">=0.8" },
+    { name = "hdbscan", specifier = ">=0.8.44" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "matplotlib", specifier = ">=3.8" },
