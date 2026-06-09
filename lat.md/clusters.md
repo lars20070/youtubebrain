@@ -16,6 +16,7 @@ flowchart TD
     Reps --> Agent[pydantic-ai_Agent_per_cluster]
     Agent --> Topics[(topics.json)]
     Fit --> Model[(bertopic_model/)]
+    Topics --> Plot[(clustering/clusters.png)]
     Topics --> Wiki[(wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md)]
     Assign --> RawFM[raw/&lt;id&gt;.md frontmatter: topic + cluster_id]
     RawChannels[raw/&lt;id&gt;.md channels list] --> Creators[(wiki/creators/&lt;channel_id&gt;.md)]
@@ -31,6 +32,8 @@ Pipeline order is documented in [[overview#Run order]] — `cluster` is always t
 
 [[src/youtubebrain/clusters.py#save_atomic]] writes four artefacts under `Markdown/clustering/`: `assignments.json` (a JSON list of int cluster ids row-aligned to `ids.json`, `-1` for outliers), `topics.json` (a list of [[src/youtubebrain/clusters.py#TopicInfo]]), `meta.json`, and the `bertopic_model/` directory.
 
+Alongside the run-summary scalars, `meta.json` carries a `clusters` size table built by [[src/youtubebrain/clusters.py#_cluster_size_table]]: one `{cluster_id, label, count}` entry per cluster — including the outlier pseudo-cluster `-1` — sorted by `count` descending (cluster_id ascending on ties), so cluster sizes are readable without parsing `topics.json`.
+
 Atomic write protocol mirrors [[embeddings#Storage layout]]: each json file is written to a `*.tmp` sibling then `os.replace`-d into place in order assignments → topics → meta. The BERTopic model is saved to a sibling `bertopic_model.tmp/` directory, then the existing `bertopic_model/` is removed and the tmp directory replaced into place. A failing mid-write step never leaves `*.tmp` siblings — [[src/youtubebrain/clusters.py#save_atomic]]'s `finally` block sweeps them up. [[src/youtubebrain/clusters.py#load_existing]] reads the trio back; any schema mismatch is logged and treated as empty so the next run rebuilds cleanly. The BERTopic model is persisted with `prediction_data=True` so a future Phase 5 `partial_fit` over new embedding rows is unblocked.
 
 `topic_model.save(...)` receives `save_embedding_model=meta["embedding_model"]` — the SentenceTransformer id read from `Markdown/embeddings/meta.json` and threaded through the run's meta dict. This stores a pointer (the model id string) inside the BERTopic artefact rather than re-serialising the weights, which silences BERTopic's "saving without explicitly defining an embedding model" warning and makes the saved model self-describing on reload. When `meta["embedding_model"]` is missing or non-string the call falls back to `False` and the warning is allowed to surface, since there is genuinely no encoder id to record.
@@ -41,11 +44,21 @@ Atomic write protocol mirrors [[embeddings#Storage layout]]: each json file is w
 
 UMAP runs with `metric="cosine"`, `n_components=5`, `n_neighbors=15`, `min_dist=0.0`, `random_state=42` — the random state is the only knob that makes the reduction deterministic and is recorded in `meta.json`. HDBSCAN runs `metric="euclidean"` on UMAP output (cosine is no longer meaningful after the reduction), `cluster_selection_method="eom"`, `min_samples=5`, and `prediction_data=True`. BERTopic stitches them together with the representation pipeline `{"Main": [KeyBERTInspired(), MaximalMarginalRelevance(diversity=0.3)]}`, `calculate_probabilities=False`, and `verbose=True`. The SentenceTransformer name from `embeddings/meta.json.model` is forwarded into BERTopic as `embedding_model=...` because `KeyBERTInspired` re-embeds *candidate keywords* via that model — passing precomputed document `embeddings=` to `fit_transform` is not enough on its own. After `fit_transform`, [[src/youtubebrain/clusters.py#_extract_cluster_payloads]] pulls `(cluster_id, keywords, rep_texts)` out of the fitted model — see [[clusters#Representative-doc plumbing]].
 
+## Cluster plot
+
+[[src/youtubebrain/clusters.py#plot_clusters]] renders a 2-D scatter of every embedding coloured by cluster to `Markdown/clustering/clusters.png`, so cluster separation and relative sizes are visible at a glance.
+
+A dedicated [[src/youtubebrain/clusters.py#_build_umap_2d]] reduces the embedding store to two dimensions — the clustering UMAP targets 5-D for HDBSCAN, which is not directly plottable — reusing the same `n_neighbors=15`, `min_dist=0.0`, `metric="cosine"`, `random_state=42` knobs so the layout is deterministic. Rendering uses matplotlib's headless `Agg` backend (no display or browser, so it works on Docker and the Raspberry Pi). The outlier cluster `-1` is drawn first as faint grey points so the real clusters render on top; each non-outlier cluster gets a distinct `nipy_spectral` colour and a legend entry (kebab-case label, ordered by count descending) placed outside the axes. The PNG is written to a `*.tmp` sibling then `os.replace`-d into place, mirroring the [[clusters#Storage layout]] atomic-write protocol.
+
+The call runs inline at the end of [[src/youtubebrain/clusters.py#cluster_all]] after `save_atomic`, wrapped in try/except so a plotting failure only logs a warning and never aborts the run — fail-soft like the [[clusters#Wiki topics]] writes. The artefact is gitignored under `Markdown/clustering/*`, so it is a local-only visual aid, not a committed output.
+
 ## Min-cluster-size heuristic
 
-[[src/youtubebrain/clusters.py#_resolve_min_cluster_size]] returns `max(_MIN_SIZE_FLOOR=10, round(sqrt(n_videos)))` so the default scales sensibly from a 517-video test corpus (→ 23) to a 10K target (→ 100) without code change.
+[[src/youtubebrain/clusters.py#_resolve_min_cluster_size]] returns `max(_MIN_SIZE_FLOOR=10, round(sqrt(n_videos) / granularity))`, with `granularity` (default 4) from [[src/youtubebrain/clusters.py#_cluster_granularity]], so the default scales with corpus size without code change.
 
-`CLUSTER_MIN_SIZE` overrides the heuristic for hand-tuning when the outlier share is too large or the cluster count falls outside the expected band. The run refuses with an actionable error when `len(ids) < 2 * min_cluster_size`, telling the caller to either grow the corpus or lower the override.
+The floor dominates until the corpus clears `(floor * granularity)² = 1600` videos; a 6400-video corpus then resolves to 20 and a 10K target to 25.
+
+`CLUSTER_MIN_SIZE` overrides the heuristic outright for hand-tuning when the outlier share is too large or the cluster count falls outside the expected band. `CLUSTER_GRANULARITY` instead tunes the heuristic's divisor — a larger value yields a smaller `min_cluster_size` and therefore more, finer clusters — and is ignored when `CLUSTER_MIN_SIZE` is set. The run refuses with an actionable error when `len(ids) < 2 * min_cluster_size`, telling the caller to either grow the corpus or lower the override.
 
 ## Representative-doc plumbing
 
@@ -69,7 +82,7 @@ Downstream consumers MUST key off the human-readable kebab-case `label` field on
 
 `PROVIDER` and `MODEL` are reused via [[provider#Model factory]] for the labelling agent — set them to whichever model is cheapest at the time of running.
 
-`CLUSTER_MIN_SIZE` overrides the [[clusters#Min-cluster-size heuristic]]. `LABEL_CONCURRENCY` (default 4) caps the parallel LLM calls during labelling; bump it to 8–16 for cloud providers, drop it to 1–2 for local Ollama.
+`CLUSTER_MIN_SIZE` overrides the [[clusters#Min-cluster-size heuristic]] outright; `CLUSTER_GRANULARITY` (default 4) instead tunes the heuristic's `sqrt(n) / granularity` divisor via [[src/youtubebrain/clusters.py#_cluster_granularity]] and is ignored when `CLUSTER_MIN_SIZE` is set. `LABEL_CONCURRENCY` (default 4) caps the parallel LLM calls during labelling; bump it to 8–16 for cloud providers, drop it to 1–2 for local Ollama.
 
 ## Wiki topics
 
@@ -159,17 +172,25 @@ After `cluster_all`, the saved `assignments.json` has the same length as `ids.js
 
 `meta.json` records `n_clusters`, `n_outliers`, `min_cluster_size`, `llm_model`, `bertopic_version`, and the resolved `embedding_model` so a future run can compare against it.
 
+### Meta lists cluster sizes
+
+`meta.json` carries a `clusters` list of `{cluster_id, label, count}` sorted by count descending, with the outlier cluster (`-1`, label `outliers`) included as its own entry.
+
 ### BERTopic save records embedding model name
 
 `save_atomic` forwards `meta["embedding_model"]` into `topic_model.save(save_embedding_model=...)` as a pointer string. The stub's recorded `save_kwargs["save_embedding_model"]` equals `embeddings/meta.json.model`, never `False`.
 
 ### CLUSTER_MIN_SIZE env override
 
-Setting `CLUSTER_MIN_SIZE=37` makes `_resolve_min_cluster_size(10_000)` return 37 instead of the `round(sqrt(n))` value.
+Setting `CLUSTER_MIN_SIZE=37` makes `_resolve_min_cluster_size(10_000)` return 37 instead of the heuristic value.
 
 ### Min-size heuristic table
 
-`_resolve_min_cluster_size` returns the floor for small `n` and `round(sqrt(n))` once `n` exceeds the floor squared; verified parametrically at 1, 50, 100, 517, and 10 000.
+`_resolve_min_cluster_size` returns the floor for small `n` and `round(sqrt(n) / granularity)` once `n` clears the floor; verified parametrically at 1, 100, 517, 6400, and 10 000 with the default granularity of 4.
+
+### CLUSTER_GRANULARITY env override
+
+Setting `CLUSTER_GRANULARITY=2` makes `_resolve_min_cluster_size(10_000)` return 50 (`sqrt(10000) / 2`), proving the divisor is configurable and that a smaller divisor yields a larger min cluster size than the default of 4.
 
 ### Cluster all happy path
 
@@ -222,6 +243,10 @@ Setting `LABEL_CONCURRENCY=12` makes `_label_concurrency()` return 12; an invali
 ### Real BERTopic smoke
 
 A `slow_clustering`-marked test fits real BERTopic + UMAP + HDBSCAN on 200 synthetic 384-d gaussian-blob vectors and asserts at least 2 clusters are discovered; skipped by default via the `pytest.ini_options.addopts` filter.
+
+### Cluster plot writes png
+
+`plot_clusters` renders a non-empty `clusters.png` given a stubbed 2-D reducer and a mix of real clusters and outliers, exercising the scatter/legend path without invoking real UMAP or a display backend.
 
 ## Wiki topics
 

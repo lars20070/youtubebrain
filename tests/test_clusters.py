@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +13,7 @@ import yaml
 
 from youtubebrain import clusters
 from youtubebrain import embeddings as emb
-from youtubebrain.clusters import TopicLabel
+from youtubebrain.clusters import TopicInfo, TopicLabel
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -223,11 +222,15 @@ def _patch_pipeline(
     def _dummy_version() -> str:
         return "0.16.0-stub"
 
+    def _dummy_plot(_arr: object, _assignments: list[int], _topics: list[TopicInfo], _path: Path) -> None:
+        return None
+
     monkeypatch.setattr(clusters, "_build_umap", _dummy_umap)
     monkeypatch.setattr(clusters, "_build_hdbscan", _dummy_hdbscan)
     monkeypatch.setattr(clusters, "_build_topic_model", _dummy_topic_model)
     monkeypatch.setattr(clusters, "_build_label_agent", _dummy_agent)
     monkeypatch.setattr(clusters, "_bertopic_version", _dummy_version)
+    monkeypatch.setattr(clusters, "plot_clusters", _dummy_plot)
 
 
 # @lat: [[clusters#Tests#Round-trip persistence]]
@@ -302,6 +305,30 @@ def test_meta_records_run_summary_fields(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert meta["embedding_model"] == "stub-model"
 
 
+# @lat: [[clusters#Tests#Meta lists cluster sizes]]
+def test_meta_lists_cluster_sizes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """meta.json carries a `clusters` table of {cluster_id, label, count}, count-desc, outliers included."""
+    emb_dir, _raw, _cl = _patch_stores(monkeypatch, tmp_path)
+    ids = [f"vid{i:02d}" for i in range(6)]
+    _seed_embeddings(emb_dir, ids)
+    monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
+
+    topic_model = _StubTopicModel(
+        [0, 0, 1, 1, -1, 0],
+        {0: {"keywords": ["a"], "rep_docs": []}, 1: {"keywords": ["b"], "rep_docs": []}},
+    )
+    _patch_pipeline(monkeypatch, topic_model, _StubAgent())
+
+    clusters.cluster_all()
+
+    meta = json.loads(clusters.META_JSON_PATH.read_text(encoding="utf-8"))
+    assert meta["clusters"] == [
+        {"cluster_id": 0, "label": "a-cluster", "count": 3},
+        {"cluster_id": 1, "label": "b-cluster", "count": 2},
+        {"cluster_id": -1, "label": "outliers", "count": 1},
+    ]
+
+
 # @lat: [[clusters#Tests#BERTopic save records embedding model name]]
 def test_save_atomic_passes_embedding_model_name_to_bertopic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """save_atomic forwards `meta['embedding_model']` to topic_model.save(save_embedding_model=...)."""
@@ -333,17 +360,27 @@ def test_cluster_min_size_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("n_videos", "expected"),
     [
-        (1, clusters._MIN_SIZE_FLOOR),
-        (50, clusters._MIN_SIZE_FLOOR),
-        (100, max(clusters._MIN_SIZE_FLOOR, round(math.sqrt(100)))),
-        (517, round(math.sqrt(517))),
-        (10_000, round(math.sqrt(10_000))),
+        (1, clusters._MIN_SIZE_FLOOR),  # sqrt(1)/4 → 0, floor wins
+        (100, clusters._MIN_SIZE_FLOOR),  # sqrt(100)/4 = 2.5 → 2, floor wins
+        (517, clusters._MIN_SIZE_FLOOR),  # sqrt(517)/4 ≈ 5.7 → 6, floor wins
+        (6_400, 20),  # sqrt(6400)/4 = 80/4 = 20
+        (10_000, 25),  # sqrt(10000)/4 = 100/4 = 25
     ],
 )
 def test_min_size_heuristic_uses_floor_then_sqrt(monkeypatch: pytest.MonkeyPatch, n_videos: int, expected: int) -> None:
-    """Heuristic returns floor for small n, round(sqrt(n)) for n above the floor squared."""
+    """Heuristic returns floor for small n, round(sqrt(n) / granularity) once it clears the floor."""
     monkeypatch.delenv(clusters._MIN_SIZE_ENV, raising=False)
+    monkeypatch.delenv(clusters._CLUSTER_GRANULARITY_ENV, raising=False)
     assert clusters._resolve_min_cluster_size(n_videos) == expected
+
+
+# @lat: [[clusters#Tests#CLUSTER_GRANULARITY env override]]
+def test_cluster_granularity_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLUSTER_GRANULARITY divides sqrt(n) in the heuristic; a smaller divisor yields a larger min size."""
+    monkeypatch.delenv(clusters._MIN_SIZE_ENV, raising=False)
+    monkeypatch.setenv(clusters._CLUSTER_GRANULARITY_ENV, "2")
+    # sqrt(10_000) = 100, /2 → 50 (beats both the default /4 → 25 and the floor of 10).
+    assert clusters._resolve_min_cluster_size(10_000) == 50
 
 
 # @lat: [[clusters#Tests#Cluster all happy path]]
@@ -942,3 +979,36 @@ def test_real_bertopic_smoke_on_synthetic_blobs(monkeypatch: pytest.MonkeyPatch,
 
     n_clusters = clusters.cluster_all()
     assert n_clusters >= 2
+
+
+class _StubUmap2d:
+    """2-D reducer stand-in returning precomputed coordinates without running real UMAP."""
+
+    def __init__(self, coords: np.ndarray) -> None:
+        self._coords = coords
+
+    def fit_transform(self, arr: object) -> np.ndarray:
+        _ = arr
+        return self._coords
+
+
+# @lat: [[clusters#Tests#Cluster plot writes png]]
+def test_plot_clusters_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """plot_clusters renders a non-empty PNG from a stubbed 2-D reducer over real + outlier clusters."""
+    rng = np.random.default_rng(0)
+    assignments = [0, 0, 1, 1, -1, 0, 1, -1]
+    arr = rng.standard_normal((len(assignments), 8)).astype(np.float32)
+    coords = rng.standard_normal((len(assignments), 2)).astype(np.float32)
+    monkeypatch.setattr(clusters, "_build_umap_2d", lambda: _StubUmap2d(coords))
+
+    topics = [
+        TopicInfo(cluster_id=-1, count=2, label="outliers", description="", keywords=[], representative_ids=[]),
+        TopicInfo(cluster_id=0, count=3, label="rust-async", description="d", keywords=["rust"], representative_ids=[]),
+        TopicInfo(cluster_id=1, count=3, label="web-search", description="d", keywords=["web"], representative_ids=[]),
+    ]
+    out = tmp_path / "clusters.png"
+
+    clusters.plot_clusters(arr, assignments, topics, out)
+
+    assert out.exists()
+    assert out.stat().st_size > 0

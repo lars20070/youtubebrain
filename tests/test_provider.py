@@ -10,10 +10,11 @@ from youtubebrain.provider import Provider, _check_api_key, create_model
 
 
 def _clear_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove every env var the factory consults so a test starts from a clean slate."""
-    # Neutralise load_dotenv so a developer's local .env cannot re-populate the variables
-    # this helper just cleared. Tests must be hermetic regardless of what is on disk.
-    monkeypatch.setattr("youtubebrain.provider.load_dotenv", lambda: None)
+    """Remove every env var the factory consults so a test starts from a clean slate.
+
+    The on-disk .env is already neutralised by the autouse _block_dotenv fixture in conftest.py,
+    so clearing the process env here leaves the factory looking at genuinely unset variables.
+    """
     for name in (
         "PROVIDER",
         "MODEL",

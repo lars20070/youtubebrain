@@ -52,6 +52,8 @@ The error message points at the Google Cloud Console and the `.env` file. The ch
 
 Behaviour is verified by `tests/test_descriptions.py` using `respx` to mock the YouTube API endpoint and `tmp_path` for the cache file. The autouse `_set_api_key` fixture sets `API_KEY_YOUTUBE=test-key` so each test starts from a known environment.
 
+The suite-wide autouse `_block_dotenv` fixture in `tests/conftest.py` additionally stops `load_dotenv` from reading the developer's on-disk `.env`, so a test that needs a variable absent still `delenv`s it without the file silently re-populating it.
+
 ### Uses cache first
 
 A pre-seeded cache file means no HTTP request is issued for that video ID; the respx route is asserted not-called.

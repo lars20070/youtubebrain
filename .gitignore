@@ -22,6 +22,7 @@ lat.md/.cache
 *-history.json
 Markdown/raw/*.md
 Markdown/.cache/
+Markdown/.obsidian/
 Markdown/wiki/
 Markdown/wiki_BACKUP/
 Markdown/embeddings/*

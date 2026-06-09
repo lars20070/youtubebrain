@@ -69,7 +69,7 @@ The image installs `bash`, `ca-certificates`, `git`, `ripgrep`, and `fd-find` vi
 
 The image pre-creates `/home/node/.pi/agent` and `chown`s `/home/node` to the non-root `node` user.
 
-This is required so the root-initialised named volume mounted there ([[wiki#Sandbox runtime#Mount layout]]) stays writable when the container runs as `--user 1000` under a read-only root filesystem. `WORKDIR` is `/workspace` and the `ENTRYPOINT` is `pi`.
+This is required so the root-initialised named volume mounted there ([[wiki#Sandbox runtime#Mount layout]]) stays writable when the container runs as `--user 1000` under a read-only root filesystem. `WORKDIR` is `/workspace` (chowned to `node`), and the image sets `USER node` so it defaults to the non-root `node` user (UID/GID 1000) even without an explicit `--user`. The `ENTRYPOINT` is `pi`.
 
 ## Sandbox runtime
 

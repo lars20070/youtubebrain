@@ -122,7 +122,6 @@ async def test_fetch_descriptions_raises_without_api_key(
 ) -> None:
     """fetch_descriptions raises RuntimeError if API_KEY_YOUTUBE is unset."""
     monkeypatch.delenv("API_KEY_YOUTUBE", raising=False)
-    monkeypatch.setattr("youtubebrain.descriptions.load_dotenv", lambda: None)
     cache_path = tmp_path / "descriptions.json"
     with pytest.raises(RuntimeError, match="API_KEY_YOUTUBE"):
         await fetch_descriptions(["abc"], cache_path)

@@ -24,15 +24,19 @@ ASSIGNMENTS_JSON_PATH = CLUSTERING_DIR / "assignments.json"
 TOPICS_JSON_PATH = CLUSTERING_DIR / "topics.json"
 META_JSON_PATH = CLUSTERING_DIR / "meta.json"
 MODEL_DIR = CLUSTERING_DIR / "bertopic_model"
+PLOT_PNG_PATH = CLUSTERING_DIR / "clusters.png"
 WIKI_TOPICS_DIR = Path("Markdown/wiki/topics")
 WIKI_CREATORS_DIR = Path("Markdown/wiki/creators")
 
 _MIN_SIZE_FLOOR = 10
 _MIN_SIZE_ENV = "CLUSTER_MIN_SIZE"
+_DEFAULT_CLUSTER_GRANULARITY = 4
+_CLUSTER_GRANULARITY_ENV = "CLUSTER_GRANULARITY"
 _UMAP_N_COMPONENTS = 5
 _UMAP_N_NEIGHBORS = 15
 _UMAP_MIN_DIST = 0.0
 _UMAP_RANDOM_STATE = 42
+_UMAP_N_COMPONENTS_2D = 2
 _HDBSCAN_MIN_SAMPLES = 5
 _MMR_DIVERSITY = 0.3
 _REPRESENTATIVE_DOCS = 4
@@ -43,6 +47,13 @@ _REP_TEXT_CHAR_BUDGET = 600
 _OUTLIER_CLUSTER_ID = -1
 _OUTLIER_SLUG = "outliers"
 _FRONTMATTER_FENCE = "---"
+_PLOT_FIGSIZE = (12, 9)
+_PLOT_DPI = 150
+_PLOT_POINT_SIZE = 4
+_PLOT_OUTLIER_COLOR = "#cccccc"
+_PLOT_OUTLIER_ALPHA = 0.3
+_PLOT_CLUSTER_ALPHA = 0.7
+_PLOT_CMAP = "nipy_spectral"
 
 _LABEL_SYSTEM_PROMPT = """\
 You name a cluster of YouTube videos. Given top keywords and up to 4 representative title+summary excerpts, return:
@@ -75,7 +86,7 @@ class TopicInfo(BaseModel):
 
 # @lat: [[clusters#Min-cluster-size heuristic]]
 def _resolve_min_cluster_size(n_videos: int) -> int:
-    """Resolve `min_cluster_size`: env override beats `max(floor, round(sqrt(n)))`."""
+    """Resolve `min_cluster_size`: env override beats `max(floor, round(sqrt(n) / granularity))`."""
     load_dotenv()
     raw = os.environ.get(_MIN_SIZE_ENV)
     if raw:
@@ -86,7 +97,24 @@ def _resolve_min_cluster_size(n_videos: int) -> int:
         if value < 2:
             raise ValueError(f"{_MIN_SIZE_ENV} must be >= 2, got {value}")
         return value
-    return max(_MIN_SIZE_FLOOR, round(math.sqrt(n_videos)))
+    return max(_MIN_SIZE_FLOOR, round(math.sqrt(n_videos) / _cluster_granularity()))
+
+
+# @lat: [[clusters#Env vars]]
+def _cluster_granularity() -> int:
+    """Resolve `CLUSTER_GRANULARITY` (default 4); divides sqrt(n) in the min-cluster-size heuristic.
+
+    A larger divisor yields a smaller min_cluster_size and therefore more, finer clusters.
+    """
+    load_dotenv()
+    raw = os.environ.get(_CLUSTER_GRANULARITY_ENV)
+    if not raw:
+        return _DEFAULT_CLUSTER_GRANULARITY
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{_CLUSTER_GRANULARITY_ENV} must be int, got {raw!r}") from exc
+    return max(1, value)
 
 
 # @lat: [[clusters#Env vars]]
@@ -110,6 +138,20 @@ def _build_umap() -> Any:  # noqa: ANN401
 
     return UMAP(
         n_components=_UMAP_N_COMPONENTS,
+        n_neighbors=_UMAP_N_NEIGHBORS,
+        min_dist=_UMAP_MIN_DIST,
+        metric="cosine",
+        random_state=_UMAP_RANDOM_STATE,
+    )
+
+
+# @lat: [[clusters#Cluster plot]]
+def _build_umap_2d() -> Any:  # noqa: ANN401
+    """Construct a deterministic 2-D UMAP reducer for the cluster scatter plot (cosine, random_state=42)."""
+    from umap import UMAP  # noqa: PLC0415
+
+    return UMAP(
+        n_components=_UMAP_N_COMPONENTS_2D,
         n_neighbors=_UMAP_N_NEIGHBORS,
         min_dist=_UMAP_MIN_DIST,
         metric="cosine",
@@ -627,6 +669,98 @@ def write_wiki_creators() -> tuple[int, int]:
     return n_created, n_existing
 
 
+# @lat: [[clusters#Storage layout]]
+def _cluster_size_table(topics: list[TopicInfo]) -> list[dict[str, Any]]:
+    """Build the meta.json `clusters` list: {cluster_id, label, count} per topic.
+
+    Sorted by count descending, cluster_id ascending on ties. Includes the outlier
+    pseudo-cluster (-1) when present, since `topics` already holds its synthetic row.
+    """
+    return [{"cluster_id": t.cluster_id, "label": t.label, "count": t.count} for t in sorted(topics, key=lambda t: (-t.count, t.cluster_id))]
+
+
+# @lat: [[clusters#Cluster plot]]
+def plot_clusters(
+    arr: Any,  # noqa: ANN401
+    assignments: list[int],
+    topics: list[TopicInfo],
+    path: Path,
+) -> None:
+    """Render a 2-D UMAP scatter of every embedding coloured by cluster, saved atomically as a PNG.
+
+    Reduces the embedding store to two dimensions with a dedicated deterministic UMAP, draws the
+    outlier cluster (-1) first as faint grey points so the real clusters render on top, then plots
+    each non-outlier cluster in a distinct colour with a legend of kebab-case labels ordered by
+    count descending. The figure is written to a *.tmp sibling then os.replace-d into place.
+
+    Args:
+        arr: Embedding matrix, one row per video, row-aligned to assignments.
+        assignments: Cluster id per row (-1 for outliers).
+        topics: TopicInfo rows providing the cluster_id to label mapping and per-cluster counts.
+        path: Destination PNG path.
+    """
+    import matplotlib  # noqa: PLC0415
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    coords = np.asarray(_build_umap_2d().fit_transform(arr))
+    assignments_arr = np.asarray(assignments)
+
+    ordered = sorted(
+        (t for t in topics if t.cluster_id != _OUTLIER_CLUSTER_ID),
+        key=lambda t: (-t.count, t.cluster_id),
+    )
+    cmap = plt.get_cmap(_PLOT_CMAP)
+    colors = [cmap(0.05 + 0.9 * (i / max(len(ordered) - 1, 1))) for i in range(len(ordered))]
+
+    fig, ax = plt.subplots(figsize=_PLOT_FIGSIZE)
+
+    outlier_mask = assignments_arr == _OUTLIER_CLUSTER_ID
+    if outlier_mask.any():
+        ax.scatter(
+            coords[outlier_mask, 0],
+            coords[outlier_mask, 1],
+            s=_PLOT_POINT_SIZE,
+            c=_PLOT_OUTLIER_COLOR,
+            alpha=_PLOT_OUTLIER_ALPHA,
+            linewidths=0,
+            label=_OUTLIER_SLUG,
+        )
+
+    for color, topic in zip(colors, ordered, strict=True):
+        mask = assignments_arr == topic.cluster_id
+        if not mask.any():
+            continue
+        ax.scatter(
+            coords[mask, 0],
+            coords[mask, 1],
+            s=_PLOT_POINT_SIZE,
+            color=color,
+            alpha=_PLOT_CLUSTER_ALPHA,
+            linewidths=0,
+            label=topic.label,
+        )
+
+    ax.set_title(f"{len(assignments)} videos, {len(ordered)} clusters")
+    ax.set_xlabel("UMAP-1")
+    ax.set_ylabel("UMAP-2")
+    ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5), markerscale=3, fontsize="small", frameon=False)
+    fig.tight_layout()
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        # Pass format explicitly: the ".tmp" suffix would otherwise leave matplotlib unable to infer it.
+        fig.savefig(tmp, dpi=_PLOT_DPI, bbox_inches="tight", format=path.suffix.lstrip("."))
+        os.replace(tmp, path)
+    finally:
+        plt.close(fig)
+        if tmp.exists():
+            tmp.unlink()
+
+
 # @lat: [[clusters#CLI entry]]
 def cluster_all() -> int:
     """Load embeddings, fit BERTopic, label clusters via LLM, save atomically. Returns n_clusters excl. outliers."""
@@ -698,6 +832,7 @@ def cluster_all() -> int:
         "llm_model": os.environ.get("MODEL"),
         "label_concurrency": concurrency,
         "bertopic_version": _bertopic_version(),
+        "clusters": _cluster_size_table(topics),
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -705,6 +840,11 @@ def cluster_all() -> int:
     logger.info(
         f"Cluster run complete: n_clusters={n_clusters}, n_outliers={n_outliers}, min_cluster_size={min_size}, llm_model={meta['llm_model']!r}.",
     )
+    try:
+        plot_clusters(arr, assignments, topics, PLOT_PNG_PATH)
+        logger.info(f"Cluster plot written to {PLOT_PNG_PATH}.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Failed to render cluster plot: {exc}")
     n_topics_written, n_raw_updated = write_wiki_topics(assignments, ids, topics)
     logger.info(
         f"Wiki topics written: {n_topics_written}, raw frontmatter updated: {n_raw_updated}.",
