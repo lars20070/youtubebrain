@@ -30,6 +30,8 @@ WIKI_CREATORS_DIR = Path("Markdown/wiki/creators")
 
 _MIN_SIZE_FLOOR = 10
 _MIN_SIZE_ENV = "CLUSTER_MIN_SIZE"
+_DEFAULT_CLUSTER_GRANULARITY = 4
+_CLUSTER_GRANULARITY_ENV = "CLUSTER_GRANULARITY"
 _UMAP_N_COMPONENTS = 5
 _UMAP_N_NEIGHBORS = 15
 _UMAP_MIN_DIST = 0.0
@@ -84,7 +86,7 @@ class TopicInfo(BaseModel):
 
 # @lat: [[clusters#Min-cluster-size heuristic]]
 def _resolve_min_cluster_size(n_videos: int) -> int:
-    """Resolve `min_cluster_size`: env override beats `max(floor, round(sqrt(n)))`."""
+    """Resolve `min_cluster_size`: env override beats `max(floor, round(sqrt(n) / granularity))`."""
     load_dotenv()
     raw = os.environ.get(_MIN_SIZE_ENV)
     if raw:
@@ -95,7 +97,24 @@ def _resolve_min_cluster_size(n_videos: int) -> int:
         if value < 2:
             raise ValueError(f"{_MIN_SIZE_ENV} must be >= 2, got {value}")
         return value
-    return max(_MIN_SIZE_FLOOR, round(math.sqrt(n_videos)))
+    return max(_MIN_SIZE_FLOOR, round(math.sqrt(n_videos) / _cluster_granularity()))
+
+
+# @lat: [[clusters#Env vars]]
+def _cluster_granularity() -> int:
+    """Resolve `CLUSTER_GRANULARITY` (default 4); divides sqrt(n) in the min-cluster-size heuristic.
+
+    A larger divisor yields a smaller min_cluster_size and therefore more, finer clusters.
+    """
+    load_dotenv()
+    raw = os.environ.get(_CLUSTER_GRANULARITY_ENV)
+    if not raw:
+        return _DEFAULT_CLUSTER_GRANULARITY
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{_CLUSTER_GRANULARITY_ENV} must be int, got {raw!r}") from exc
+    return max(1, value)
 
 
 # @lat: [[clusters#Env vars]]

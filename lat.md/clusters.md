@@ -54,9 +54,11 @@ The call runs inline at the end of [[src/youtubebrain/clusters.py#cluster_all]] 
 
 ## Min-cluster-size heuristic
 
-[[src/youtubebrain/clusters.py#_resolve_min_cluster_size]] returns `max(_MIN_SIZE_FLOOR=10, round(sqrt(n_videos)))` so the default scales sensibly from a 517-video test corpus (→ 23) to a 10K target (→ 100) without code change.
+[[src/youtubebrain/clusters.py#_resolve_min_cluster_size]] returns `max(_MIN_SIZE_FLOOR=10, round(sqrt(n_videos) / granularity))`, with `granularity` (default 4) from [[src/youtubebrain/clusters.py#_cluster_granularity]], so the default scales with corpus size without code change.
 
-`CLUSTER_MIN_SIZE` overrides the heuristic for hand-tuning when the outlier share is too large or the cluster count falls outside the expected band. The run refuses with an actionable error when `len(ids) < 2 * min_cluster_size`, telling the caller to either grow the corpus or lower the override.
+The floor dominates until the corpus clears `(floor * granularity)² = 1600` videos; a 6400-video corpus then resolves to 20 and a 10K target to 25.
+
+`CLUSTER_MIN_SIZE` overrides the heuristic outright for hand-tuning when the outlier share is too large or the cluster count falls outside the expected band. `CLUSTER_GRANULARITY` instead tunes the heuristic's divisor — a larger value yields a smaller `min_cluster_size` and therefore more, finer clusters — and is ignored when `CLUSTER_MIN_SIZE` is set. The run refuses with an actionable error when `len(ids) < 2 * min_cluster_size`, telling the caller to either grow the corpus or lower the override.
 
 ## Representative-doc plumbing
 
@@ -80,7 +82,7 @@ Downstream consumers MUST key off the human-readable kebab-case `label` field on
 
 `PROVIDER` and `MODEL` are reused via [[provider#Model factory]] for the labelling agent — set them to whichever model is cheapest at the time of running.
 
-`CLUSTER_MIN_SIZE` overrides the [[clusters#Min-cluster-size heuristic]]. `LABEL_CONCURRENCY` (default 4) caps the parallel LLM calls during labelling; bump it to 8–16 for cloud providers, drop it to 1–2 for local Ollama.
+`CLUSTER_MIN_SIZE` overrides the [[clusters#Min-cluster-size heuristic]] outright; `CLUSTER_GRANULARITY` (default 4) instead tunes the heuristic's `sqrt(n) / granularity` divisor via [[src/youtubebrain/clusters.py#_cluster_granularity]] and is ignored when `CLUSTER_MIN_SIZE` is set. `LABEL_CONCURRENCY` (default 4) caps the parallel LLM calls during labelling; bump it to 8–16 for cloud providers, drop it to 1–2 for local Ollama.
 
 ## Wiki topics
 
@@ -180,11 +182,15 @@ After `cluster_all`, the saved `assignments.json` has the same length as `ids.js
 
 ### CLUSTER_MIN_SIZE env override
 
-Setting `CLUSTER_MIN_SIZE=37` makes `_resolve_min_cluster_size(10_000)` return 37 instead of the `round(sqrt(n))` value.
+Setting `CLUSTER_MIN_SIZE=37` makes `_resolve_min_cluster_size(10_000)` return 37 instead of the heuristic value.
 
 ### Min-size heuristic table
 
-`_resolve_min_cluster_size` returns the floor for small `n` and `round(sqrt(n))` once `n` exceeds the floor squared; verified parametrically at 1, 50, 100, 517, and 10 000.
+`_resolve_min_cluster_size` returns the floor for small `n` and `round(sqrt(n) / granularity)` once `n` clears the floor; verified parametrically at 1, 100, 517, 6400, and 10 000 with the default granularity of 4.
+
+### CLUSTER_GRANULARITY env override
+
+Setting `CLUSTER_GRANULARITY=2` makes `_resolve_min_cluster_size(10_000)` return 50 (`sqrt(10000) / 2`), proving the divisor is configurable and that a smaller divisor yields a larger min cluster size than the default of 4.
 
 ### Cluster all happy path
 
