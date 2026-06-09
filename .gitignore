@@ -17,6 +17,7 @@ __pycache__/
 .mcp.json
 .cursor/mcp.json
 lat.md/.cache
+.qmd/
 
 # YouTube
 *-history.json

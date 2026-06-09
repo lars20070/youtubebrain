@@ -16,7 +16,7 @@ Because cluster ids and labels are not stable across runs ([[clusters#Re-cluster
 
 [compile-wiki.sh](../compile-wiki.sh) is the host-side driver: it builds the sandbox image once, then enriches every seeded topic page in its own disposable container.
 
-It runs under `set -euo pipefail`, so any failed build or container run aborts the whole batch.
+It runs under `set -euo pipefail`, so any failed build or container run aborts the whole batch. Re-running after such an abort resumes where it stopped, because already-enriched pages are skipped (see [[wiki#Orchestration#Resumable skip of already-filled pages]]).
 
 ### Image build
 
@@ -29,6 +29,14 @@ All container configuration (security, resource limits, mounts, env) lives decla
 The script globs `Markdown/wiki/topics/*/*.md` — every seeded `<slug>/<slug>.md` page from [[clusters#Wiki topics#Page rendering]], including the synthetic `outliers` page — and processes them one at a time.
 
 Only topic pages are driven in batch, and only via the `fill-topic` skill. The `fill-creator` skill exists for creator pages but is **not** wired into this loop; creators are filled on demand (see [[wiki#Skills#fill-creator]]).
+
+### Resumable skip of already-filled pages
+
+Before invoking the agent, the loop skips any page that already carries a `last_updated:` frontmatter line, so re-running the script after an interruption resumes at the first un-enriched page instead of redoing work.
+
+`last_updated` is the completion marker: it is one of the fields `fill-topic` stamps only on completion ([[wiki#Agent schema#Page frontmatter]]) and is absent from machine-seeded stubs. The page is therefore its own progress record — no separate manifest to keep in sync — and the check self-heals: blank or delete a page's frontmatter and the next run re-enriches it.
+
+The `grep -q '^last_updated:' "$page"` sits inside an `if`, so a non-match (non-zero exit) is consumed by the `if` and does not trip `set -euo pipefail`; only a match `continue`s past the page (logging `Skipping already-filled page …`). This is the mitigation for the abort-on-failure behavior: a failed container stops the batch, and the operator simply re-runs the script to continue.
 
 ### Host-to-container path mapping
 
@@ -128,7 +136,7 @@ It also mandates upkeep: always keep `index.md` and `log.md` in sync with every 
 
 Every wiki page the agent writes must carry required frontmatter, while **preserving** the machine-written fields the seeder added (`label`, `cluster_id`, `count`, `keywords`, `representative_ids`, `name`, `url`).
 
-The agent adds: `slug` (kebab-case; folder name for topics, channel id for creators), `tldr` (≤200-char load-bearing summary), `aliases` (alternative names, to prevent duplicate pages), `sources` (the `raw/` video IDs backing the claims), `confidence` (`low`/`medium`/`high`), and `last_updated` (`YYYY-MM-DD`).
+The agent adds: `slug` (kebab-case; folder name for topics, channel id for creators), `tldr` (≤200-char load-bearing summary), `aliases` (alternative names, to prevent duplicate pages), `sources` (the `raw/` video IDs backing the claims), `confidence` (`low`/`medium`/`high`), and `last_updated` (`YYYY-MM-DDThh:mm:ss+00:00`).
 
 ### Linking
 
@@ -162,4 +170,10 @@ Its steps: open the stub `creators/<channel_id>.md` (preserving its `name`/`id`/
 
 Two vault-level files keep the wiki navigable and auditable, and AGENTS.md requires the agent to update both on every write. The seeder leaves them empty; the agent populates them as it enriches pages.
 
-`wiki/index.md` is a content-oriented catalog grouped by section (Topics, Creators, Series, Syntheses, Questions), one line per page: the `[[slug]]` (or alias), its `tldr`, and a source count. `wiki/log.md` is append-only, newest entries at the bottom, one grep-friendly line per action — `## [YYYY-MM-DD] <skill> | <slug> | <short note>` — and past lines are never edited or deleted.
+`wiki/index.md` is a content-oriented catalog grouped by section (Topics, Creators, Series, Syntheses, Questions), one line per page: the `[[slug]]` (or alias), its `tldr`, and a source count. `wiki/log.md` is append-only, newest entries at the bottom, one grep-friendly line per action — `## [YYYY-MM-DDThh:mm:ss+00:00] <skill> | <slug> | <short note>` — and past lines are never edited or deleted.
+
+## Search layer
+
+Host-side qmd hybrid search over enriched wiki pages, registered as an MCP server after [[wiki]] compilation. See [[search]] for setup and verification.
+
+After enrichment, run [index-wiki.sh](../index-wiki.sh) to index semantic wiki pages (`topics/`, `creators/`, `syntheses/`, `questions/`). Catalog (`index.md`) and changelog (`log.md`) are excluded from the index.
