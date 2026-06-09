@@ -16,6 +16,7 @@ flowchart TD
     Reps --> Agent[pydantic-ai_Agent_per_cluster]
     Agent --> Topics[(topics.json)]
     Fit --> Model[(bertopic_model/)]
+    Topics --> Plot[(clustering/clusters.png)]
     Topics --> Wiki[(wiki/topics/&lt;slug&gt;/&lt;slug&gt;.md)]
     Assign --> RawFM[raw/&lt;id&gt;.md frontmatter: topic + cluster_id]
     RawChannels[raw/&lt;id&gt;.md channels list] --> Creators[(wiki/creators/&lt;channel_id&gt;.md)]
@@ -42,6 +43,14 @@ Atomic write protocol mirrors [[embeddings#Storage layout]]: each json file is w
 [[src/youtubebrain/clusters.py#_build_umap]], [[src/youtubebrain/clusters.py#_build_hdbscan]], and [[src/youtubebrain/clusters.py#_build_topic_model]] each lazy-import their heavy dependency so the default test run never touches `umap-learn`, `hdbscan`, or `bertopic`.
 
 UMAP runs with `metric="cosine"`, `n_components=5`, `n_neighbors=15`, `min_dist=0.0`, `random_state=42` — the random state is the only knob that makes the reduction deterministic and is recorded in `meta.json`. HDBSCAN runs `metric="euclidean"` on UMAP output (cosine is no longer meaningful after the reduction), `cluster_selection_method="eom"`, `min_samples=5`, and `prediction_data=True`. BERTopic stitches them together with the representation pipeline `{"Main": [KeyBERTInspired(), MaximalMarginalRelevance(diversity=0.3)]}`, `calculate_probabilities=False`, and `verbose=True`. The SentenceTransformer name from `embeddings/meta.json.model` is forwarded into BERTopic as `embedding_model=...` because `KeyBERTInspired` re-embeds *candidate keywords* via that model — passing precomputed document `embeddings=` to `fit_transform` is not enough on its own. After `fit_transform`, [[src/youtubebrain/clusters.py#_extract_cluster_payloads]] pulls `(cluster_id, keywords, rep_texts)` out of the fitted model — see [[clusters#Representative-doc plumbing]].
+
+## Cluster plot
+
+[[src/youtubebrain/clusters.py#plot_clusters]] renders a 2-D scatter of every embedding coloured by cluster to `Markdown/clustering/clusters.png`, so cluster separation and relative sizes are visible at a glance.
+
+A dedicated [[src/youtubebrain/clusters.py#_build_umap_2d]] reduces the embedding store to two dimensions — the clustering UMAP targets 5-D for HDBSCAN, which is not directly plottable — reusing the same `n_neighbors=15`, `min_dist=0.0`, `metric="cosine"`, `random_state=42` knobs so the layout is deterministic. Rendering uses matplotlib's headless `Agg` backend (no display or browser, so it works on Docker and the Raspberry Pi). The outlier cluster `-1` is drawn first as faint grey points so the real clusters render on top; each non-outlier cluster gets a distinct `nipy_spectral` colour and a legend entry (kebab-case label, ordered by count descending) placed outside the axes. The PNG is written to a `*.tmp` sibling then `os.replace`-d into place, mirroring the [[clusters#Storage layout]] atomic-write protocol.
+
+The call runs inline at the end of [[src/youtubebrain/clusters.py#cluster_all]] after `save_atomic`, wrapped in try/except so a plotting failure only logs a warning and never aborts the run — fail-soft like the [[clusters#Wiki topics]] writes. The artefact is gitignored under `Markdown/clustering/*`, so it is a local-only visual aid, not a committed output.
 
 ## Min-cluster-size heuristic
 
@@ -228,6 +237,10 @@ Setting `LABEL_CONCURRENCY=12` makes `_label_concurrency()` return 12; an invali
 ### Real BERTopic smoke
 
 A `slow_clustering`-marked test fits real BERTopic + UMAP + HDBSCAN on 200 synthetic 384-d gaussian-blob vectors and asserts at least 2 clusters are discovered; skipped by default via the `pytest.ini_options.addopts` filter.
+
+### Cluster plot writes png
+
+`plot_clusters` renders a non-empty `clusters.png` given a stubbed 2-D reducer and a mix of real clusters and outliers, exercising the scatter/legend path without invoking real UMAP or a display backend.
 
 ## Wiki topics
 

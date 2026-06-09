@@ -14,7 +14,7 @@ import yaml
 
 from youtubebrain import clusters
 from youtubebrain import embeddings as emb
-from youtubebrain.clusters import TopicLabel
+from youtubebrain.clusters import TopicInfo, TopicLabel
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -223,11 +223,15 @@ def _patch_pipeline(
     def _dummy_version() -> str:
         return "0.16.0-stub"
 
+    def _dummy_plot(_arr: object, _assignments: list[int], _topics: list[TopicInfo], _path: Path) -> None:
+        return None
+
     monkeypatch.setattr(clusters, "_build_umap", _dummy_umap)
     monkeypatch.setattr(clusters, "_build_hdbscan", _dummy_hdbscan)
     monkeypatch.setattr(clusters, "_build_topic_model", _dummy_topic_model)
     monkeypatch.setattr(clusters, "_build_label_agent", _dummy_agent)
     monkeypatch.setattr(clusters, "_bertopic_version", _dummy_version)
+    monkeypatch.setattr(clusters, "plot_clusters", _dummy_plot)
 
 
 # @lat: [[clusters#Tests#Round-trip persistence]]
@@ -966,3 +970,36 @@ def test_real_bertopic_smoke_on_synthetic_blobs(monkeypatch: pytest.MonkeyPatch,
 
     n_clusters = clusters.cluster_all()
     assert n_clusters >= 2
+
+
+class _StubUmap2d:
+    """2-D reducer stand-in returning precomputed coordinates without running real UMAP."""
+
+    def __init__(self, coords: np.ndarray) -> None:
+        self._coords = coords
+
+    def fit_transform(self, arr: object) -> np.ndarray:
+        _ = arr
+        return self._coords
+
+
+# @lat: [[clusters#Tests#Cluster plot writes png]]
+def test_plot_clusters_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """plot_clusters renders a non-empty PNG from a stubbed 2-D reducer over real + outlier clusters."""
+    rng = np.random.default_rng(0)
+    assignments = [0, 0, 1, 1, -1, 0, 1, -1]
+    arr = rng.standard_normal((len(assignments), 8)).astype(np.float32)
+    coords = rng.standard_normal((len(assignments), 2)).astype(np.float32)
+    monkeypatch.setattr(clusters, "_build_umap_2d", lambda: _StubUmap2d(coords))
+
+    topics = [
+        TopicInfo(cluster_id=-1, count=2, label="outliers", description="", keywords=[], representative_ids=[]),
+        TopicInfo(cluster_id=0, count=3, label="rust-async", description="d", keywords=["rust"], representative_ids=[]),
+        TopicInfo(cluster_id=1, count=3, label="web-search", description="d", keywords=["web"], representative_ids=[]),
+    ]
+    out = tmp_path / "clusters.png"
+
+    clusters.plot_clusters(arr, assignments, topics, out)
+
+    assert out.exists()
+    assert out.stat().st_size > 0
