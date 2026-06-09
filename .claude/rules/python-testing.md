@@ -9,7 +9,6 @@
 ## Test Structure
 
 ```python
-@pytest.mark.vcr()  # For tests using VCR cassettes
 @pytest.mark.asyncio  # For async tests
 async def test_feature() -> None:
     """Test description."""
@@ -50,14 +49,11 @@ uv run pytest --cov=src/youtubebrain --cov-report=term-missing
 - `@pytest.mark.paid` - Requires paid API keys (skipped in CI)
 - `@pytest.mark.ollama` - Requires local Ollama (skipped in CI)
 - `@pytest.mark.searxng` - Requires local SearXNG (skipped in CI)
-- `@pytest.mark.vcr()` - Uses VCR cassettes for HTTP recording
 
-## VCR Cassettes
+## Test environment isolation
 
-- Location: `tests/cassettes/`
-- Record mode: `'none'` (playback only by default)
-- Hostname normalization in `conftest.py` handles `host.docker.internal` → `localhost`
-- Deterministic tests: set `temperature=0.0` in `MODEL_SETTINGS`
+- `tests/conftest.py` holds the autouse `_block_dotenv` fixture. It patches `load_dotenv` to a no-op in every `youtubebrain` module that calls it, so no test reads the developer's on-disk `.env`.
+- The fixture blocks only the `.env` file, not exported process env vars. A test that needs a variable absent must still `monkeypatch.delenv(name, raising=False)`; one that needs a specific value must `monkeypatch.setenv(...)`.
 
 ## Coverage Requirements
 

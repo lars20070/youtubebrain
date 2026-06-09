@@ -369,8 +369,6 @@ def test_cluster_min_size_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 )
 def test_min_size_heuristic_uses_floor_then_sqrt(monkeypatch: pytest.MonkeyPatch, n_videos: int, expected: int) -> None:
     """Heuristic returns floor for small n, round(sqrt(n) / granularity) once it clears the floor."""
-    # Neutralise load_dotenv so a developer's local .env (e.g. CLUSTER_MIN_SIZE) cannot bleed in.
-    monkeypatch.setattr(clusters, "load_dotenv", lambda *_a, **_k: None)
     monkeypatch.delenv(clusters._MIN_SIZE_ENV, raising=False)
     monkeypatch.delenv(clusters._CLUSTER_GRANULARITY_ENV, raising=False)
     assert clusters._resolve_min_cluster_size(n_videos) == expected
@@ -379,7 +377,6 @@ def test_min_size_heuristic_uses_floor_then_sqrt(monkeypatch: pytest.MonkeyPatch
 # @lat: [[clusters#Tests#CLUSTER_GRANULARITY env override]]
 def test_cluster_granularity_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLUSTER_GRANULARITY divides sqrt(n) in the heuristic; a smaller divisor yields a larger min size."""
-    monkeypatch.setattr(clusters, "load_dotenv", lambda *_a, **_k: None)
     monkeypatch.delenv(clusters._MIN_SIZE_ENV, raising=False)
     monkeypatch.setenv(clusters._CLUSTER_GRANULARITY_ENV, "2")
     # sqrt(10_000) = 100, /2 → 50 (beats both the default /4 → 25 and the floor of 10).
