@@ -69,7 +69,25 @@ Re-applies `qmd context add qmd://youtubebrain-wiki "<text>"` every run (idempot
 
 VS Code / Cursor expand `${workspaceFolder}`. For Claude Code CLI, copy the block into a local `.mcp.json` (gitignored) using an **absolute** path to `.qmd` — CLI config does not reliably expand workspace variables.
 
+For Claude Desktop (macOS config: `~/Library/Application Support/Claude/claude_desktop_config.json`), add the same entry under `mcpServers` with an absolute `XDG_CACHE_HOME` **and** an absolute `command` (`which qmd`) — the GUI app expands no editor variables and launches with a minimal `PATH` — then fully quit (Cmd+Q) and relaunch.
+
 MCP tools: `structured_search` (lex/vec/hyde), `get`, `multi_get`, `status`. CLI equivalents: `qmd query` (recommended), `qmd search` (BM25), `qmd vsearch` (vector).
+
+## CLI search
+
+After indexing, query the `youtubebrain-wiki` collection from the host with the `qmd` CLI — set `XDG_CACHE_HOME=$PWD/.qmd` so it reads the repo-local index. Each hit is a wiki page that links out to its source videos.
+
+Three modes trade quality for speed: `qmd query` (hybrid — BM25 + vector + LLM rerank, best), `qmd search` (BM25 keywords, no LLM, fast), and `qmd vsearch` (vector only). Scope with `-c youtubebrain-wiki`.
+
+```bash
+# Hybrid natural-language search (recommended)
+XDG_CACHE_HOME=$PWD/.qmd qmd query "anglo-saxon migration to Britain" -c youtubebrain-wiki
+
+# Fast keyword search, listing matching pages (docid,score,path,context)
+XDG_CACHE_HOME=$PWD/.qmd qmd search "anglo-saxon" -c youtubebrain-wiki -n 5 --files
+```
+
+Common flags: `-n <num>` (count; default 5, 20 with `--files`/`--json`), `--full`, `--min-score <num>`, output `--files`/`--json`/`--md`/`--csv`/`--xml`, `--explain` (score traces). Fetch a page with `qmd get <path>` or several with `qmd multi-get <glob>`.
 
 ## Lifecycle
 
