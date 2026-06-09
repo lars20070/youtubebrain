@@ -43,5 +43,5 @@ uv run cluster
 4. `uv run ingest` — second pass; rewrites `Markdown/raw/<id>.md` with the now-cached transcripts and summaries folded in.
 5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
 6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
-7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `.env.pi` (from `.env.pi.example`). Do not re-run `cluster` after this, or enriched pages are wiped. To observe sandbox metrics during execution and check that Pi is running, open a new terminal and run `docker stats $(docker compose ps -q pi-sandbox)`.
+7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `.env.pi` (from `.env.pi.example`). Do not re-run `cluster` after this, or enriched pages are wiped.
 
