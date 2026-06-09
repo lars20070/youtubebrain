@@ -45,3 +45,22 @@ uv run cluster
 6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
 7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `.env.pi` (from `.env.pi.example`). Do not re-run `cluster` after this, or enriched pages are wiped.
 
+### Search the wiki (qmd)
+
+Optional eighth step after wiki compilation. Indexes curated wiki pages into a repo-local [qmd](https://github.com/tobi/qmd) search DB and exposes them to Claude Code via MCP (see [search](lat.md/search.md)).
+
+```bash
+npm install -g @tobilu/qmd@2.1.0   # tested version; Node required
+./index-wiki.sh                     # first run downloads embed model (~minutes)
+```
+
+Then reload MCP in Cursor/VS Code — [`.vscode/mcp.json`](.vscode/mcp.json) registers a `qmd` server alongside `lat`. The index lives in `.qmd/` (gitignored), not `~/.cache/qmd/`.
+
+**Claude Code CLI:** copy the `qmd` block from `.vscode/mcp.json` into a local `.mcp.json` (gitignored), replacing `${workspaceFolder}` with the absolute path to this repo's `.qmd` directory — CLI config does not expand workspace variables reliably.
+
+Re-run `./index-wiki.sh` whenever wiki pages change (after `./compile-wiki.sh` or manual edits). Example host-side query:
+
+```bash
+XDG_CACHE_HOME=$PWD/.qmd qmd query "anglo saxon migration"
+XDG_CACHE_HOME=$PWD/.qmd qmd search -c youtubebrain-wiki anglo-saxon --files
+```

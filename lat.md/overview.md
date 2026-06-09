@@ -15,6 +15,8 @@ Six invocations across five tools — `ingest` is run twice because it both *see
 5. `uv run embed` — encodes `title + summary` (fallback `title + description`) into `Markdown/embeddings/`.
 6. `uv run cluster` — UMAP + HDBSCAN via BERTopic over the embedding store, with one LLM call per cluster; writes `Markdown/clustering/`, `Markdown/wiki/topics/`, and `Markdown/wiki/creators/`.
 
+Optional host-side step after [[wiki]] compilation: `./index-wiki.sh` builds a repo-local qmd search index over curated wiki pages and registers the `qmd` MCP server (see [[search]]).
+
 ### Prerequisites per stage
 
 Each row lists what must exist on disk before the tool will produce a useful result. Hard inputs cause an error if missing; soft inputs gracefully degrade to `_(unavailable)_` placeholders or `None` lookups.

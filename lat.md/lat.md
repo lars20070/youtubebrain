@@ -9,3 +9,4 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[clusters]] — UMAP + HDBSCAN + BERTopic over the embedding store, with LLM-named topics
 - [[provider]] — Build the pydantic-ai model dispatched by the PROVIDER env var
 - [[wiki]] - Compile wiki using the Pi agent and the `fill-` skills.
+- [[search]] — Host-side qmd hybrid search over curated wiki pages via MCP.

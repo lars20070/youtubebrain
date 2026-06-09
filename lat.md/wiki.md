@@ -171,3 +171,9 @@ Its steps: open the stub `creators/<channel_id>.md` (preserving its `name`/`id`/
 Two vault-level files keep the wiki navigable and auditable, and AGENTS.md requires the agent to update both on every write. The seeder leaves them empty; the agent populates them as it enriches pages.
 
 `wiki/index.md` is a content-oriented catalog grouped by section (Topics, Creators, Series, Syntheses, Questions), one line per page: the `[[slug]]` (or alias), its `tldr`, and a source count. `wiki/log.md` is append-only, newest entries at the bottom, one grep-friendly line per action — `## [YYYY-MM-DDThh:mm:ss+00:00] <skill> | <slug> | <short note>` — and past lines are never edited or deleted.
+
+## Search layer
+
+Host-side qmd hybrid search over enriched wiki pages, registered as an MCP server after [[wiki]] compilation. See [[search]] for setup and verification.
+
+After enrichment, run [index-wiki.sh](../index-wiki.sh) to index semantic wiki pages (`topics/`, `creators/`, `syntheses/`, `questions/`). Catalog (`index.md`) and changelog (`log.md`) are excluded from the index.
