@@ -85,4 +85,6 @@ The same `.qmd` index also backs an MCP server (`qmd mcp`, stdio transport), so 
 
 4. Use **absolute** paths, not the `${workspaceFolder}` form: set `XDG_CACHE_HOME` to your repo's `.qmd` (run `echo "$PWD/.qmd"` in the repo root) and `command` to your `qmd` binary (run `which qmd`). The GUI app launches with a minimal `PATH`, so a bare `qmd` is often not found.
 5. Fully quit Claude Desktop (**Cmd+Q**, not just close the window) and reopen it. The `qmd` search tools then appear in the app's MCP/tools menu.
-
+<br><br><br>
+![video clusters](./clusters.png)
+*Clusters of watched YouTube videos.*
