@@ -1,6 +1,6 @@
 ## YouTubeBrain
 
-YouTubeBrain generates a markdown knowledge base from your watched YouTube videos.
+YouTubeBrain generates a markdown knowledge base from your watched YouTube videos. Any agent can connect to it via MCP.
 
 ### Exporting your watch history
 
