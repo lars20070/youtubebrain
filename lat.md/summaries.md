@@ -32,27 +32,27 @@ flowchart TD
 
 ## SQLite schema
 
-[[src/youtubebrain/summaries.py#init_db]] ensures `Markdown/.cache/` exists, opens `summaries.sqlite`, sets WAL via `PRAGMA journal_mode=WAL`, and creates the `summaries` table plus `idx_summaries_status` on `status` if missing.
+[[src/youtubebrain/summaries.py#init_db]] delegates to [[src/youtubebrain/cache.py#StatusCache#init_db]] via a `StatusCache` configured for the `summaries` table.
 
-Each row is keyed by `video_id`. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap). `text` holds the summary body; `model` records which model id produced an `ok` row. `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and caps.
+Shared base columns come from [[cache#StatusCache API]]: `text` holds the summary body, and `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and retry caps. The summary-specific extra column `model` records which model id produced an `ok` row. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap).
 
 ## Enqueue
 
-[[src/youtubebrain/summaries.py#enqueue]] deduplicates IDs, ensures the schema, and inserts pending rows with `INSERT OR IGNORE`.
+[[src/youtubebrain/summaries.py#enqueue]] delegates to [[src/youtubebrain/cache.py#StatusCache#enqueue]] for dedupe + pending-row insertion.
 
 Existing primary keys are left unchanged, so re-running after a partial night only adds new ids from an updated Takeout export without clobbering completed rows.
 
 ## Read API
 
-[[src/youtubebrain/summaries.py#load_summaries]] is a synchronous, read-only lookup of plain `text` for ok rows.
+[[src/youtubebrain/summaries.py#load_summaries]] is a wrapper over [[src/youtubebrain/cache.py#StatusCache#load_ok]].
 
-If the database file is missing, every requested id maps to `None`. Otherwise ids are deduplicated, queried in chunks of 500, and only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case.
+If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case.
 
 ## Fetch loop
 
 [[src/youtubebrain/summaries.py#fetch_summaries]] runs the summarization worker: one video at a time, async LLM calls via pydantic-ai.
 
-Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows store `text` and `model`; each commit logs `n_ok/n_total` and percent complete.
+Row selection uses [[src/youtubebrain/cache.py#StatusCache#next_retryable]] with statuses `pending/error` and attempt cap 5. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows are persisted through [[src/youtubebrain/cache.py#StatusCache#record_result]], and progress logging uses [[src/youtubebrain/cache.py#StatusCache#counts]].
 
 ## Agent build
 

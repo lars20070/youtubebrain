@@ -31,21 +31,23 @@ It calls [[src/youtubebrain/transcripts.py#init_db]], [[src/youtubebrain/transcr
 
 ## SQLite schema
 
-[[src/youtubebrain/transcripts.py#init_db]] ensures `Markdown/.cache/` exists, opens `transcripts.sqlite`, sets WAL via `PRAGMA journal_mode=WAL`, and creates the `transcripts` table plus `idx_transcripts_status` on `status` if missing.
+[[src/youtubebrain/transcripts.py#init_db]] delegates to [[src/youtubebrain/cache.py#StatusCache#init_db]] via a table-specific `StatusCache` configured for `transcripts`.
 
-Each row is keyed by `video_id`. `status` drives resumability: typical values are `pending` (queued), `ok` (plain text ready for markdown), `no_captions` and `unavailable` (terminal, do not retry in the loop), `error` (transient or unknown; retried until `attempts` reaches the cap), `blocked` (IP or rate signal; not auto-selected until reset), and `age_restricted` (primary path could not auth; fallbacks failed). `language` and `is_generated` mirror the winning caption track. `text` holds joined plain words for [[ingest#Markdown writer]]; `raw_json` stores timed snippet JSON when available. `source` is `yta`, `yt-dlp`, or `pytubefix`. `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and caps.
+Shared base columns come from [[cache#StatusCache API]]: `text` holds joined plain words for [[ingest#Markdown writer]], and `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and retry caps. The transcripts table adds worker-specific extras so fallback metadata remains queryable: `language` and `is_generated` mirror the winning caption track, `raw_json` stores timed snippet JSON when available, and `source` records which resolver won — `yta`, `yt-dlp`, or `pytubefix`.
+
+`status` drives resumability: typical values are `pending` (queued), `ok` (plain text ready for markdown), `no_captions` and `unavailable` (terminal, do not retry in the loop), `error` (transient or unknown; retried until `attempts` reaches the cap), `blocked` (IP or rate signal; not auto-selected until reset), and `age_restricted` (primary path could not auth; fallbacks failed).
 
 ## Enqueue
 
-[[src/youtubebrain/transcripts.py#enqueue]] deduplicates IDs, ensures the schema, and inserts pending rows with `INSERT OR IGNORE`.
+[[src/youtubebrain/transcripts.py#enqueue]] delegates to [[src/youtubebrain/cache.py#StatusCache#enqueue]], which deduplicates ids and inserts pending rows with `INSERT OR IGNORE`.
 
 Existing primary keys are left unchanged, so re-running after a partial night only adds new ids from an updated Takeout export without clobbering completed or terminal rows.
 
 ## Read API
 
-[[src/youtubebrain/transcripts.py#load_transcripts]] is a synchronous, read-only lookup of plain `text` for ok rows.
+[[src/youtubebrain/transcripts.py#load_transcripts]] is a thin wrapper over [[src/youtubebrain/cache.py#StatusCache#load_ok]].
 
-If the database file is missing, every requested id maps to `None`. Otherwise ids are deduplicated, queried in chunks of 500, and only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case without extra branching.
+If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case without extra branching.
 
 ## Fetch loop
 
@@ -53,9 +55,9 @@ If the database file is missing, every requested id maps to `None`. Otherwise id
 
 Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Terminal rows (`ok`, `no_captions`, `unavailable`, `age_restricted`) never match again. **`blocked` is intentionally omitted** so a throttled IP does not immediately re-hit the same id; after cooldown, set `blocked` rows back to `pending` or `error` (or delete them) to retry. This differs from the original design sketch that included `blocked` in the `IN` list; the implementation favours not burning attempts on the same row while the IP is still hot.
 
-On success, `_resolve_with_fallbacks` returns seven fields; the updater writes `status`, `language`, `text`, `raw_json`, `is_generated`, `error_message`, `source`, bumps `attempts`, and timestamps, then commits every row. Each iteration logs the video id and status plus `COUNT(status='ok')`, total rows, and percent complete from a single aggregate query on `transcripts`. After each `ok`, a counter drives an extra `random.uniform(60, 120)` second pause every 500 successes. Every completed iteration (success or terminal failure) sleeps `random.uniform(min, max)` seconds via [[src/youtubebrain/transcripts.py#_sleep]], where `(min, max)` comes from [[src/youtubebrain/transcripts.py#_inter_video_sleep_window]] (defaults 3 and 7; monkeypatched in tests).
+On success, `_resolve_with_fallbacks` returns seven fields; the updater writes them via [[src/youtubebrain/cache.py#StatusCache#record_result]]. Retry picks and progress totals use [[src/youtubebrain/cache.py#StatusCache#next_retryable]] and [[src/youtubebrain/cache.py#StatusCache#counts]]. After each `ok`, a counter drives an extra `random.uniform(60, 120)` second pause every 500 successes. Every completed iteration (success or terminal failure) sleeps `random.uniform(min, max)` seconds via [[src/youtubebrain/transcripts.py#_sleep]], where `(min, max)` comes from [[src/youtubebrain/transcripts.py#_inter_video_sleep_window]] (defaults 3 and 7; monkeypatched in tests).
 
-`BlockedError` is raised directly by [[src/youtubebrain/transcripts.py#_try_yta]] and also by [[src/youtubebrain/transcripts.py#_resolve_with_fallbacks]] when [[src/youtubebrain/transcripts.py#_try_ytdlp]] returns a `blocked` signal for HTTP 429 / Too Many Requests. `fetch_transcripts` catches it: the row is set to `blocked`, `attempts` increments, and the process sleeps `BACKOFFS[consecutive_blocks - 1]` seconds (300, 900, 2700, 7200). After four consecutive blocks across iterations, the loop logs and stops so you can resume later without hammering YouTube.
+`BlockedError` is raised directly by [[src/youtubebrain/transcripts.py#_try_yta]] and also by [[src/youtubebrain/transcripts.py#_resolve_with_fallbacks]] when [[src/youtubebrain/transcripts.py#_try_ytdlp]] returns a `blocked` signal for HTTP 429 / Too Many Requests. `fetch_transcripts` catches it and records a blocked attempt via [[src/youtubebrain/cache.py#StatusCache#record_attempt]], then sleeps `BACKOFFS[consecutive_blocks - 1]` seconds (300, 900, 2700, 7200). After four consecutive blocks across iterations, the loop logs and stops so you can resume later without hammering YouTube.
 
 ## Pacing configuration
 

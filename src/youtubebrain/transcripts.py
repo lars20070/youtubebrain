@@ -7,7 +7,6 @@ import os
 import random
 import re
 import shutil
-import sqlite3
 import subprocess
 import tempfile
 import time
@@ -31,6 +30,7 @@ from youtube_transcript_api._errors import (
 )
 
 from youtubebrain import config, logger, takeout
+from youtubebrain.cache import StatusCache
 
 LANGS: tuple[str, ...] = ("en", "en-US", "en-GB", "a.en")
 
@@ -48,6 +48,7 @@ _DEFAULT_SLEEP_MIN = 3.0
 _DEFAULT_SLEEP_MAX = 7.0
 _SLEEP_MIN_ENV = "TRANSCRIPTS_SLEEP_MIN"
 _SLEEP_MAX_ENV = "TRANSCRIPTS_SLEEP_MAX"
+_TRANSCRIPTS_EXTRA_COLUMNS = ("language TEXT", "is_generated INTEGER", "raw_json TEXT", "source TEXT")
 
 
 class BlockedError(Exception):
@@ -344,127 +345,48 @@ def resolve_transcript(
 # @lat: [[transcripts#SQLite schema]]
 def init_db(db_path: Path | None = None) -> None:
     """Create the transcripts table and indexes if missing; enable WAL."""
-    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(db_path)
-    try:
-        con.execute("PRAGMA journal_mode=WAL")
-        con.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS transcripts (
-                video_id      TEXT PRIMARY KEY,
-                status        TEXT NOT NULL,
-                language      TEXT,
-                is_generated  INTEGER,
-                text          TEXT,
-                raw_json      TEXT,
-                source        TEXT,
-                error_message TEXT,
-                attempts      INTEGER NOT NULL DEFAULT 0,
-                fetched_at    TIMESTAMP,
-                last_attempt  TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_transcripts_status ON transcripts(status);
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
+    _cache(db_path).init_db()
 
 
 # @lat: [[transcripts#Enqueue]]
 def enqueue(video_ids: list[str], db_path: Path | None = None) -> None:
     """Insert video IDs as pending rows; existing primary keys are left unchanged."""
-    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
-    init_db(db_path)
-    con = sqlite3.connect(db_path)
-    try:
-        con.executemany(
-            "INSERT OR IGNORE INTO transcripts (video_id, status) VALUES (?, 'pending')",
-            [(vid,) for vid in dict.fromkeys(video_ids)],
-        )
-        con.commit()
-    finally:
-        con.close()
+    _cache(db_path).enqueue(video_ids)
 
 
 # @lat: [[transcripts#Read API]]
 def load_transcripts(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:
     """Return plain transcript text for each id; None when missing or status is not ok."""
-    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
-    unique = list(dict.fromkeys(video_ids))
-    if not unique:
-        return {}
-    if not db_path.exists():
-        return dict.fromkeys(unique, None)
-    con = sqlite3.connect(db_path)
-    try:
-        cur = con.cursor()
-        out: dict[str, str | None] = dict.fromkeys(unique, None)
-        for chunk_start in range(0, len(unique), 500):
-            chunk = unique[chunk_start : chunk_start + 500]
-            qmarks = ",".join("?" * len(chunk))
-            rows = cur.execute(
-                f"SELECT video_id, text FROM transcripts WHERE video_id IN ({qmarks}) AND status = 'ok'",
-                chunk,
-            ).fetchall()
-            for vid, text in rows:
-                out[str(vid)] = text
-        return out
-    finally:
-        con.close()
+    return _cache(db_path).load_ok(video_ids)
 
 
 # @lat: [[transcripts#Fetch loop]]
 def fetch_transcripts(db_path: Path | None = None) -> None:
     """Process pending/blocked/error rows with pacing until none remain or consecutive blocks abort."""
-    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
-    init_db(db_path)
+    status_cache = _cache(db_path)
+    status_cache.init_db()
     sleep_min, sleep_max = _inter_video_sleep_window()
     yta_state = _YtaSessionState()
     consecutive_blocks = 0
     ok_since_long_pause = 0
-    con = sqlite3.connect(db_path)
-    con.row_factory = sqlite3.Row
+    con = status_cache.connect()
     try:
         while True:
-            row = con.execute(
-                """
-                SELECT video_id FROM transcripts
-                WHERE status IN ('pending','error')
-                  AND attempts < ?
-                ORDER BY attempts ASC, RANDOM() LIMIT 1
-                """,
-                (_MAX_ATTEMPTS,),
-            ).fetchone()
-            if row is None:
+            video_id = status_cache.next_retryable(con, max_attempts=_MAX_ATTEMPTS)
+            if video_id is None:
                 break
-            video_id = str(row["video_id"])
             try:
                 status, lang, text, raw_json, is_gen, err, source = _resolve_with_fallbacks(video_id, yta_state)
                 consecutive_blocks = 0
-                con.execute(
-                    """
-                    UPDATE transcripts SET
-                        status=?,
-                        language=?,
-                        text=?,
-                        raw_json=?,
-                        is_generated=?,
-                        error_message=?,
-                        source=?,
-                        attempts=attempts+1,
-                        fetched_at=CURRENT_TIMESTAMP,
-                        last_attempt=CURRENT_TIMESTAMP
-                    WHERE video_id=?
-                    """,
-                    (status, lang, text, raw_json, is_gen, err, source, video_id),
+                status_cache.record_result(
+                    con,
+                    video_id,
+                    status,
+                    text=text,
+                    error_message=err,
+                    extra={"language": lang, "is_generated": is_gen, "raw_json": raw_json, "source": source},
                 )
-                con.commit()
-                counts = con.execute(
-                    "SELECT COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0), COUNT(*) FROM transcripts",
-                ).fetchone()
-                n_ok, n_total = int(counts[0]), int(counts[1])
+                n_ok, n_total = status_cache.counts(con)
                 pct = 100.0 * n_ok / n_total if n_total else 0.0
                 logger.info(f"Transcript {video_id}: {status} ({n_ok}/{n_total} transcribed, {pct:.1f}%)")
                 if status == "ok":
@@ -474,18 +396,7 @@ def fetch_transcripts(db_path: Path | None = None) -> None:
                 _sleep(random.uniform(sleep_min, sleep_max))
             except BlockedError as e:
                 consecutive_blocks += 1
-                con.execute(
-                    """
-                    UPDATE transcripts SET
-                        status='blocked',
-                        error_message=?,
-                        attempts=attempts+1,
-                        last_attempt=CURRENT_TIMESTAMP
-                    WHERE video_id=?
-                    """,
-                    (str(e), video_id),
-                )
-                con.commit()
+                status_cache.record_attempt(con, video_id, "blocked", str(e))
                 logger.warning(f"Transcript blocked on {video_id}: {e!r}")
                 if consecutive_blocks >= _CONSECUTIVE_BLOCKS_ABORT:
                     logger.error("Too many consecutive blocks; stopping fetch loop.")
@@ -493,6 +404,11 @@ def fetch_transcripts(db_path: Path | None = None) -> None:
                 _sleep(float(BACKOFFS[consecutive_blocks - 1]))
     finally:
         con.close()
+
+
+def _cache(db_path: Path | None = None) -> StatusCache:
+    resolved_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
+    return StatusCache(resolved_path, "transcripts", _TRANSCRIPTS_EXTRA_COLUMNS)
 
 
 # @lat: [[transcripts#CLI entry]]

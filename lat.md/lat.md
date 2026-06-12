@@ -2,6 +2,7 @@ This directory defines the high-level concepts, business logic, and architecture
 
 - [[overview]] — End-to-end pipeline from Takeout watch history to clustered local wiki, with CLI run order and per-tool output files
 - [[config]] — Central pipeline path constants and the single .env loading call site
+- [[cache]] — Shared SQLite status-row cache for worker stages
 - [[takeout]] — Parse and filter Takeout watch-history records; derive stable video/channel IDs
 - [[ingest]] — Ingest YouTube history data from Google Takeout
 - [[descriptions]] — Fetch and cache YouTube video descriptions via the Data API v3
