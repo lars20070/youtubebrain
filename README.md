@@ -25,23 +25,23 @@ Edit `.env` with your YouTube API key, LLM provider, and embedding settings. Edi
 
 ### Run the pipeline
 
-Eight steps in the order below. `ingest` is run twice — once to seed the descriptions cache the summarizer needs, then again to fold transcripts and summaries into the raw markdown the embedder reads. Steps 1–6 are the Python pipeline (see this [overview](lat.md/overview.md) for the full diagram, per-stage prerequisites, and output files); step 7 compiles the wiki (see [wiki](lat.md/wiki.md)); step 8 (optional) indexes the wiki for local search (see [search](lat.md/search.md)).
+Eight steps in order. Steps 1-6 are the Python pipeline (see [overview](lat.md/overview.md) for the full diagram and per-stage I/O), step 7 compiles the wiki (see [wiki](lat.md/wiki.md)), and step 8 optionally indexes it for search (see [search](lat.md/search.md)). Steps 1 and 2 can run in parallel.
 
 ```bash
-uv run ingest
+uv run descriptions
 uv run transcripts
 uv run summaries
-uv run ingest
+uv run markdown
 uv run embed
 uv run cluster
 ./compile-wiki.sh
 ./index-wiki.sh
 ```
 
-1. `uv run ingest` — fetch descriptions (YouTube Data API), write initial `Markdown/raw/<id>.md` with placeholder Summary / Transcript sections.
+1. `uv run descriptions` — fetches YouTube Data API descriptions into `Markdown/.cache/descriptions.sqlite`.
 2. `uv run transcripts` — long-running, throttled, resumable caption fetch into `Markdown/.cache/transcripts.sqlite`. If rows are marked `blocked` after IP throttling, reset them to `pending` or `error` (or delete) before the next run.
-3. `uv run summaries` — long-running LLM summarizer; reads descriptions + transcripts, writes `Markdown/.cache/summaries.sqlite`.
-4. `uv run ingest` — second pass; rewrites `Markdown/raw/<id>.md` with the now-cached transcripts and summaries folded in.
+3. `uv run summaries` — long-running LLM summarizer; reads descriptions + transcripts caches and writes `Markdown/.cache/summaries.sqlite`.
+4. `uv run markdown` — compiles `Markdown/raw/<id>.md` from Takeout metadata plus all three caches, rendering placeholders when a row is non-`ok`.
 5. `uv run embed` — local SentenceTransformer encoding into `Markdown/embeddings/`.
 6. `uv run cluster` — BERTopic (UMAP + HDBSCAN) over the embedding store with LLM-named topics; writes `Markdown/clustering/`, `Markdown/wiki/topics/` (wipe-and-rewrite), and `Markdown/wiki/creators/` (preserve-existing stub pages).
 7. `./compile-wiki.sh` — runs the [Pi agent](https://pi.dev) in a Docker sandbox to enrich each seeded `Markdown/wiki/topics/` page into a full synthesis (`fill-topic` skill). Requires Docker and `.env.pi` (from `.env.pi.example`). Do not re-run `cluster` after this, or enriched pages are wiped.

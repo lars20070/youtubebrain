@@ -106,28 +106,41 @@ def test_fetch_descriptions_persists_per_batch(tmp_path: Path) -> None:
     ids = [f"id{i:03d}" for i in range(60)]
     init_db(db_path)
     enqueue(ids, db_path)
-    responses = [
-        _api_response([_video_item(vid, f"desc-{vid}") for vid in ids[:50]]),
-        httpx.Response(500, json={"error": "boom"}),
-    ]
+    batches: list[list[str]] = []
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        # Batch membership is randomized by pending_ids, so echo the requested
+        # ids back instead of assuming which ids land in the first batch.
+        batch = request.url.params["id"].split(",")
+        batches.append(batch)
+        if len(batches) == 1:
+            return _api_response([_video_item(vid, f"desc-{vid}") for vid in batch])
+        return httpx.Response(500, json={"error": "boom"})
+
     with respx.mock() as router:
-        router.get(YOUTUBE_API_URL).mock(side_effect=responses)
+        router.get(YOUTUBE_API_URL).mock(side_effect=_respond)
         fetch_descriptions(db_path)
 
+    assert len(batches) == 2
+    ok_batch, failed_batch = batches
+    assert len(ok_batch) == 50
+    assert len(failed_batch) == 10
     loaded = load_descriptions(ids, db_path)
-    assert loaded["id000"] == "desc-id000"
-    assert loaded["id049"] == "desc-id049"
-    assert loaded["id050"] is None
-    assert loaded["id059"] is None
+    for vid in ok_batch:
+        assert loaded[vid] == f"desc-{vid}"
+    for vid in failed_batch:
+        assert loaded[vid] is None
 
     con = sqlite3.connect(db_path)
     try:
-        rows = con.execute(
+        n_ok = con.execute("SELECT COUNT(*) FROM descriptions WHERE status='ok'").fetchone()[0]
+        n_error = con.execute(
             "SELECT COUNT(*) FROM descriptions WHERE status='error' AND attempts=1",
-        ).fetchone()
+        ).fetchone()[0]
     finally:
         con.close()
-    assert int(rows[0]) == 10
+    assert int(n_ok) == 50
+    assert int(n_error) == 10
 
 
 # @lat: [[descriptions#Tests#Error rows retryable]]
