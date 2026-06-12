@@ -4,7 +4,6 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[config]] — Central pipeline path constants and the single .env loading call site
 - [[cache]] — Shared SQLite status-row cache for worker stages
 - [[takeout]] — Parse and filter Takeout watch-history records; derive stable video/channel IDs
-- [[ingest]] — Ingest YouTube history data from Google Takeout
 - [[markdown]] — Compile and parse raw markdown files from Takeout + cache readers
 - [[descriptions]] — Fetch and cache YouTube video descriptions via the Data API v3
 - [[transcripts]] — Fetch and cache captions with a resumable SQLite-backed pipeline

@@ -34,7 +34,7 @@ Each row lists what must exist on disk before the tool will produce a useful res
 
 Steps 7–8 prerequisites (Docker + `.env.pi`; qmd + Node) are documented in [[wiki]] and [[search]].
 
-The "soft input" column documents the implementation contract: each tool reads these paths if present but works without them — see [[ingest#Markdown writer]] for the placeholder rendering, [[transcripts#Read API]] and [[summaries#Read API]] for the missing-DB-returns-None contract, and [[summaries#Skipped when no content]] for the path where missing description + missing transcript produces a `skipped` row.
+The "soft input" column documents the implementation contract: each tool reads these paths if present but works without them — see [[markdown#Markdown writer]] for the placeholder rendering, [[transcripts#Read API]] and [[summaries#Read API]] for the missing-DB-returns-None contract, and [[summaries#Skipped when no content]] for the path where missing description + missing transcript produces a `skipped` row.
 
 ## Workflow diagram
 
@@ -83,12 +83,12 @@ Steps 7–8 (`compile-wiki`, `index-wiki`) are not Python tools; they have dedic
 
 ### 1. ingest
 
-[[src/youtubebrain/ingest.py#main]] reads `watch-history.json`, drops non-watch and unresolved records, fetches missing video descriptions via the YouTube Data API v3, and writes one markdown file per watched video.
+[[src/youtubebrain/markdown.py#main]] reads `watch-history.json`, drops non-watch and unresolved records, fetches missing video descriptions via the YouTube Data API v3, and writes one markdown file per watched video.
 
 Hard reads: `Takeout/YouTube and YouTube Music/history/watch-history.json`; `API_KEY_YOUTUBE` env var resolved by [[descriptions#API key requirement]] whenever the descriptions cache has misses.
 Soft reads: `Markdown/.cache/descriptions.json` (own cache), `Markdown/.cache/transcripts.sqlite` (via [[transcripts#Read API]]), `Markdown/.cache/summaries.sqlite` (via [[summaries#Read API]]).
 Writes: `Markdown/raw/<video_id>.md` (YAML frontmatter + Summary / Description / Transcript sections), `Markdown/.cache/descriptions.json` (updated atomically after each batch).
-Details: [[ingest]], [[descriptions]].
+Details: [[markdown]], [[descriptions]].
 
 ### 2. transcripts
 
@@ -114,8 +114,8 @@ A second `uv run ingest` invocation. The command is the same as step 1; the diff
 
 Hard reads: same as step 1.
 Soft reads: `Markdown/.cache/transcripts.sqlite` and `Markdown/.cache/summaries.sqlite` now contain rows for most ids; `_(unavailable)_` placeholders persist only for ids whose row is non-`ok`.
-Writes: overwrites every `Markdown/raw/<video_id>.md` in place (idempotent per [[ingest#Markdown writer]]).
-Details: [[ingest#Markdown writer]].
+Writes: overwrites every `Markdown/raw/<video_id>.md` in place (idempotent per [[markdown#Markdown writer]]).
+Details: [[markdown#Markdown writer]].
 
 ### 5. embed
 

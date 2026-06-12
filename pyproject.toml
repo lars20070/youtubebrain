@@ -36,7 +36,6 @@ dev = [
 ]
 
 [project.scripts]
-ingest = "youtubebrain.ingest:main"
 descriptions = "youtubebrain.descriptions:main"
 transcripts = "youtubebrain.transcripts:main"
 summaries = "youtubebrain.summaries:main"
