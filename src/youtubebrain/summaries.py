@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
-from youtubebrain import config, logger
+from youtubebrain import config, logger, takeout
 from youtubebrain.provider import create_model
 from youtubebrain.transcripts import load_transcripts
 
@@ -170,14 +170,12 @@ async def fetch_summaries(db_path: Path | None = None) -> None:
     agent = _build_agent()
     model_name = os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
 
-    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
-
-    videos = load_watch_history(config.WATCH_HISTORY_PATH)
+    videos = takeout.load_watch_history(config.WATCH_HISTORY_PATH)
     titles: dict[str, str] = {}
     for video in videos:
         if video.title_url is None:
             continue
-        vid = _video_id(video.title_url)
+        vid = takeout.video_id(video.title_url)
         titles[vid] = video.title.removeprefix("Watched ")
 
     descriptions = _load_descriptions_cache()
@@ -236,11 +234,8 @@ async def fetch_summaries(db_path: Path | None = None) -> None:
 
 
 async def _main_async() -> None:
-    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
-
     logger.info("Starting summaries fetcher.")
-    videos = load_watch_history(config.WATCH_HISTORY_PATH)
-    ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
+    ids = takeout.load_video_ids()
     init_db()
     enqueue(ids)
     logger.info(f"Enqueued {len(ids)} video ids; starting fetch loop.")

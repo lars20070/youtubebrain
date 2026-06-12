@@ -28,7 +28,7 @@ flowchart TD
 
 [[src/youtubebrain/summaries.py#main]] is the `uv run summaries` entry point: Takeout IDs, enqueue, then the async fetch loop.
 
-It lazy-imports [[ingest#Loader]] helpers (`load_watch_history`, `_video_id`) inside [[src/youtubebrain/summaries.py#_main_async]] to avoid import cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/summaries.py#load_summaries]]; the history path comes from [[src/youtubebrain/config.py#WATCH_HISTORY_PATH]].
+`_main_async` pulls ids from [[src/youtubebrain/takeout.py#load_video_ids]], while [[src/youtubebrain/summaries.py#fetch_summaries]] uses [[src/youtubebrain/takeout.py#load_watch_history]] and [[src/youtubebrain/takeout.py#video_id]] to build title context for each row.
 
 ## SQLite schema
 
@@ -52,7 +52,7 @@ If the database file is missing, every requested id maps to `None`. Otherwise id
 
 [[src/youtubebrain/summaries.py#fetch_summaries]] runs the summarization worker: one video at a time, async LLM calls via pydantic-ai.
 
-Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[ingest#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows store `text` and `model`; each commit logs `n_ok/n_total` and percent complete.
+Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows store `text` and `model`; each commit logs `n_ok/n_total` and percent complete.
 
 ## Agent build
 
@@ -86,7 +86,7 @@ There is no input-hash or transcript-arrival re-summarize path: if a transcript 
 
 ## Tests
 
-Pytest coverage for SQLite helpers, agent wiring, summarize_one branches, fetch loop persistence, and ingest markdown wiring; each leaf below maps to one `# @lat:` comment in `tests/test_summaries.py` or `tests/test_ingest.py`.
+Pytest coverage for SQLite helpers, agent wiring, summarize_one branches, and fetch-loop persistence; each leaf below maps to one `# @lat:` comment in `tests/test_summaries.py`.
 
 ### Schema and enqueue idempotent
 

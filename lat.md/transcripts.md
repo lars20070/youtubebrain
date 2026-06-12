@@ -25,9 +25,9 @@ flowchart TD
 
 ## CLI entry
 
-[[src/youtubebrain/transcripts.py#main]] is the `uv run transcripts` entry point: Takeout IDs, enqueue, then the fetch loop.
+[[src/youtubebrain/transcripts.py#main]] is the `uv run transcripts` entry point: load ids from [[src/youtubebrain/takeout.py#load_video_ids]], enqueue, then run the fetch loop.
 
-It imports the [[ingest#Loader]] helper `load_watch_history` (reading [[src/youtubebrain/config.py#WATCH_HISTORY_PATH]]), extracts ids with [[src/youtubebrain/ingest.py#_video_id]], calls [[src/youtubebrain/transcripts.py#init_db]] and [[src/youtubebrain/transcripts.py#enqueue]], then [[src/youtubebrain/transcripts.py#fetch_transcripts]]. It avoids a top-level `ingest` import to prevent cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/transcripts.py#load_transcripts]].
+It calls [[src/youtubebrain/transcripts.py#init_db]], [[src/youtubebrain/transcripts.py#enqueue]], and [[src/youtubebrain/transcripts.py#fetch_transcripts]] in order. Shared Takeout parsing now lives in [[takeout]], so this stage no longer depends on ingest internals.
 
 ## SQLite schema
 
@@ -77,7 +77,7 @@ If the first stage signalled `age` and both fallbacks fail, status is `age_restr
 
 ## Tests
 
-Pytest coverage for SQLite helpers, resolver fallbacks, fetch pacing hooks, and ingest markdown wiring; each leaf below maps to one `# @lat:` comment in `tests/test_transcripts.py` or `tests/test_ingest.py`.
+Pytest coverage for SQLite helpers, resolver fallbacks, fetch pacing hooks, and ingest markdown wiring; each leaf below maps to one `# @lat:` comment in `tests/test_transcripts.py`.
 
 ### Schema and enqueue idempotent
 

@@ -14,7 +14,7 @@ class Subtitle(BaseModel):
     url: HttpUrl
 
 
-# @lat: [[ingest#WatchedVideo model]]
+# @lat: [[takeout#WatchedVideo model]]
 class WatchedVideo(BaseModel):
     """One record from the Google Takeout watch-history.json array.
 

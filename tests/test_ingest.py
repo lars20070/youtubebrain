@@ -1,18 +1,15 @@
-"""Unit tests for the Takeout watch-history ingest loader."""
+"""Unit tests for ingest markdown rendering and entrypoint wiring."""
 
 import json
 from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import HttpUrl, TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from youtubebrain import config, ingest
 from youtubebrain.ingest import (
-    _channel_id,
     _render_markdown,
-    _video_id,
-    load_watch_history,
     main,
     write_markdown,
 )
@@ -45,12 +42,6 @@ _NON_WATCH_RECORD: dict[str, object] = {
     "products": ["YouTube"],
     "activityControls": ["YouTube watch history"],
 }
-
-_HTTP_URL_ADAPTER = TypeAdapter(HttpUrl)
-
-
-def _http_url(value: str) -> HttpUrl:
-    return _HTTP_URL_ADAPTER.validate_python(value)
 
 
 def _write_history(tmp_path: Path, records: list[dict[str, object]]) -> Path:
@@ -90,99 +81,6 @@ def _stub_load_transcripts_none(video_ids: list[str], db_path: Path | None = Non
 def _stub_load_summaries_none(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
     """Return no summary text (read from DB would be empty in tests)."""
     return dict.fromkeys(dict.fromkeys(video_ids), None)
-
-
-# @lat: [[ingest#Tests#Parses valid record]]
-def test_parses_valid_record(tmp_path: Path) -> None:
-    """A minimal valid JSON array round-trips into list[WatchedVideo]."""
-    path = _write_history(tmp_path, [_VALID_RECORD])
-    videos = load_watch_history(path)
-    assert len(videos) == 1
-    assert isinstance(videos[0], WatchedVideo)
-    assert videos[0].title == "Watched Test Video"
-    assert videos[0].activity_controls == ["YouTube watch history"]
-    assert str(videos[0].title_url) == "https://www.youtube.com/watch?v=abc123"
-
-
-# @lat: [[ingest#Tests#Handles empty array]]
-def test_handles_empty_array(tmp_path: Path) -> None:
-    """An empty JSON array yields an empty list."""
-    path = _write_history(tmp_path, [])
-    assert load_watch_history(path) == []
-
-
-# @lat: [[ingest#Tests#Handles optional fields]]
-def test_handles_optional_fields(tmp_path: Path) -> None:
-    """Records without titleUrl/subtitles/description still parse."""
-    record = {k: v for k, v in _VALID_RECORD.items() if k not in {"titleUrl", "subtitles"}}
-    path = _write_history(tmp_path, [record])
-    videos = load_watch_history(path)
-    assert videos[0].title_url is None
-    assert videos[0].subtitles == []
-    assert videos[0].description is None
-
-
-# @lat: [[ingest#Tests#Rejects unknown field]]
-def test_rejects_unknown_field(tmp_path: Path) -> None:
-    """Schema drift raises ValidationError due to extra=forbid."""
-    record = {**_VALID_RECORD, "unexpectedField": "boom"}
-    path = _write_history(tmp_path, [record])
-    with pytest.raises(ValidationError):
-        load_watch_history(path)
-
-
-# @lat: [[ingest#Tests#Filters unresolved titles]]
-def test_filters_unresolved_titles(tmp_path: Path) -> None:
-    """Records whose title is a URL placeholder are silently dropped."""
-    path = _write_history(tmp_path, [_VALID_RECORD, _UNRESOLVED_RECORD])
-    videos = load_watch_history(path)
-    assert len(videos) == 1
-    assert videos[0].title == "Watched Test Video"
-
-
-# @lat: [[ingest#Tests#Filters non-watch entries]]
-def test_filters_non_watch_entries(tmp_path: Path) -> None:
-    """Records whose title does not start with 'Watched ' are silently dropped."""
-    path = _write_history(tmp_path, [_VALID_RECORD, _NON_WATCH_RECORD])
-    videos = load_watch_history(path)
-    assert len(videos) == 1
-    assert videos[0].title == "Watched Test Video"
-
-
-# @lat: [[ingest#Tests#Default path constant]]
-def test_default_path_constant() -> None:
-    """The default path points at the Takeout watch-history.json location."""
-    assert Path("Takeout/YouTube and YouTube Music/history/watch-history.json") == config.WATCH_HISTORY_PATH
-
-
-# @lat: [[ingest#Tests#Video ID extraction]]
-def test_video_id_extracts_from_url() -> None:
-    """The 'v' query parameter is returned as the video ID."""
-    url = _http_url("https://www.youtube.com/watch?v=JWWDqbcQoXA")
-    assert _video_id(url) == "JWWDqbcQoXA"
-
-
-# @lat: [[ingest#Tests#Video ID raises without v param]]
-def test_video_id_raises_without_v_param() -> None:
-    """URLs lacking a 'v' query parameter raise ValueError."""
-    url = _http_url("https://www.youtube.com/post/UgkxMzjzCEjX7KL27rz")
-    with pytest.raises(ValueError, match="'v' query parameter"):
-        _video_id(url)
-
-
-# @lat: [[ingest#Tests#Channel ID extraction]]
-def test_channel_id_extracts_from_url() -> None:
-    """The last path segment after /channel/ is returned as the channel ID."""
-    url = _http_url("https://www.youtube.com/channel/UCvPXiKxH-eH9xq-80vpgmKQ")
-    assert _channel_id(url) == "UCvPXiKxH-eH9xq-80vpgmKQ"
-
-
-# @lat: [[ingest#Tests#Channel ID raises on bad URL]]
-def test_channel_id_raises_on_bad_url() -> None:
-    """URLs that are not /channel/<id> raise ValueError."""
-    url = _http_url("https://www.youtube.com/@EpicHistory")
-    with pytest.raises(ValueError, match="/channel/<id>"):
-        _channel_id(url)
 
 
 # @lat: [[ingest#Tests#Render markdown frontmatter]]

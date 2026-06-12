@@ -6,7 +6,7 @@ lat:
 
 Fetches YouTube video descriptions via the YouTube Data API v3 and caches them on disk so re-runs do not re-fetch.
 
-Google Takeout exports do not contain video descriptions, only titles and channel references. [[src/youtubebrain/descriptions.py#fetch_descriptions]] takes a list of video IDs (extracted from Takeout titleUrls by [[ingest#Video ID extraction]]) and returns a `{video_id: description_or_None}` mapping that [[ingest#Markdown writer]] folds into each markdown file under a `## Description` heading.
+Google Takeout exports do not contain video descriptions, only titles and channel references. [[src/youtubebrain/descriptions.py#fetch_descriptions]] takes a list of video IDs (extracted from Takeout titleUrls by [[takeout#Video ID extraction]]) and returns a `{video_id: description_or_None}` mapping that [[ingest#Markdown writer]] folds into each markdown file under a `## Description` heading.
 
 ## API client
 

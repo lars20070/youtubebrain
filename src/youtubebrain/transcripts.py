@@ -30,7 +30,7 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from youtubebrain import config, logger
+from youtubebrain import config, logger, takeout
 
 LANGS: tuple[str, ...] = ("en", "en-US", "en-GB", "a.en")
 
@@ -498,11 +498,8 @@ def fetch_transcripts(db_path: Path | None = None) -> None:
 # @lat: [[transcripts#CLI entry]]
 def main() -> None:
     """Load Takeout IDs, enqueue pending rows, then run the resumable fetch loop."""
-    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
-
     logger.info("Starting transcripts fetcher.")
-    videos = load_watch_history(config.WATCH_HISTORY_PATH)
-    ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
+    ids = takeout.load_video_ids()
     init_db()
     enqueue(ids)
     logger.info(f"Enqueued {len(ids)} video ids; starting fetch loop.")
