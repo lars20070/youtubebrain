@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-history.json")
 
-# @lat: [[ingest#Default output directory]]
+# @lat: [[markdown#Default output directory]]
 MARKDOWN_RAW_DIR = Path("Markdown/raw")
 
 CACHE_DIR = Path("Markdown/.cache")

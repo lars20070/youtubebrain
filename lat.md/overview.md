@@ -121,7 +121,7 @@ Details: [[ingest#Markdown writer]].
 
 [[src/youtubebrain/embeddings.py#main]] walks `Markdown/raw/`, encodes `title + summary` (fallback `title + description`) with a local SentenceTransformer model, and writes a normalized float32 embedding store.
 
-Hard reads: `Markdown/raw/<id>.md` (at least one parseable file with embeddable text per [[embeddings#Text composition]]).
+Hard reads: `Markdown/raw/<id>.md` (at least one parseable file with embeddable text per [[markdown#Text composition]]).
 Soft reads: existing `Markdown/embeddings/{embeddings.npy, ids.json, meta.json}` for incremental encoding (only ids absent from `ids.json` are encoded; see [[embeddings#Re-embed policy]]).
 Writes: `Markdown/embeddings/embeddings.npy` (shape `(N, dim)`, float32, L2-normalized), `Markdown/embeddings/ids.json` (row-aligned id list), `Markdown/embeddings/meta.json` (`{model, dim, updated_at}`).
 Details: [[embeddings]].

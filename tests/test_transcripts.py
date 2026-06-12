@@ -6,12 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from pydantic import TypeAdapter
 from youtube_transcript_api._errors import NoTranscriptFound, RequestBlocked
 
-from youtubebrain import config, ingest
-from youtubebrain.ingest import _render_markdown, main
-from youtubebrain.models import WatchedVideo
 from youtubebrain.transcripts import (
     _DEFAULT_SLEEP_MAX,
     _DEFAULT_SLEEP_MIN,
@@ -397,74 +393,3 @@ def test_attempts_cap_stops_retry(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     fetch_transcripts(db)
     assert called is False
-
-
-_VALID = {
-    "header": "YouTube",
-    "title": "Watched Hello",
-    "titleUrl": "https://www.youtube.com/watch?v=abc",
-    "subtitles": [],
-    "time": "2020-01-01T00:00:00.000Z",
-    "products": ["YouTube"],
-    "activityControls": ["YouTube watch history"],
-}
-
-
-# @lat: [[transcripts#Tests#Ingest markdown Transcript section]]
-def test_render_markdown_transcript_section() -> None:
-    """The markdown template includes a Transcript heading and body text."""
-    video = TypeAdapter(WatchedVideo).validate_python(_VALID)
-    body = _render_markdown(video, description="d", transcript="line one")
-    assert "## Transcript" in body
-    assert "line one" in body
-    assert "## Description" in body
-
-
-# @lat: [[transcripts#Tests#Ingest transcript unavailable placeholder]]
-def test_render_markdown_transcript_unavailable() -> None:
-    """A None transcript renders the _(unavailable)_ placeholder."""
-    video = TypeAdapter(WatchedVideo).validate_python(_VALID)
-    body = _render_markdown(video, transcript=None)
-    assert "## Transcript" in body
-    assert "_(unavailable)_" in body.split("## Transcript")[1]
-
-
-# @lat: [[transcripts#Tests#Ingest main folds transcripts]]
-def test_main_folds_transcripts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """main passes cached transcript text into write_markdown."""
-    record = {
-        "header": "YouTube",
-        "title": "Watched T",
-        "titleUrl": "https://www.youtube.com/watch?v=abc123",
-        "subtitles": [{"name": "C", "url": "https://www.youtube.com/channel/UCx"}],
-        "time": "2026-05-07T08:39:47.023Z",
-        "products": ["YouTube"],
-        "activityControls": ["YouTube watch history"],
-    }
-    history = tmp_path / "watch-history.json"
-    history.write_text(json.dumps([record]))
-    out_dir = tmp_path / "out"
-    monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
-    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
-
-    def fake_desc(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
-        return dict.fromkeys(ids, "d")
-
-    def fake_load(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
-        return {"abc123": "transcript body"}
-
-    def fake_summaries(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
-        return {"abc123": "summary body"}
-
-    monkeypatch.setattr(ingest, "load_descriptions", fake_desc)
-    monkeypatch.setattr(ingest, "load_transcripts", fake_load)
-    monkeypatch.setattr(ingest, "load_summaries", fake_summaries)
-    main()
-    text = (out_dir / "abc123.md").read_text()
-    assert "transcript body" in text
-    assert "## Transcript" in text
-    assert "summary body" in text
-    assert "## Summary" in text

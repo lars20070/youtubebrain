@@ -4,15 +4,15 @@ lat:
 ---
 # Summaries
 
-Generates per-video summaries via a configurable LLM provider (Ollama by default; see [[provider]]), stores them in SQLite for resumable runs, and exposes plain text for [[ingest#Markdown writer]] via [[summaries#Read API]].
+Generates per-video summaries via a configurable LLM provider (Ollama by default; see [[provider]]), stores them in SQLite for resumable runs, and exposes plain text for [[markdown#Markdown writer]] via [[summaries#Read API]].
 
-The pipeline mirrors [[transcripts]]: a slow fetcher persists durable state, while [[src/youtubebrain/ingest.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. Summaries synthesise title, description, and transcript; sponsorship and merch boilerplate are ignored by prompt instruction, not regex stripping.
+The pipeline mirrors [[transcripts]]: a slow fetcher persists durable state, while [[src/youtubebrain/markdown.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. Summaries synthesise title, description, and transcript; sponsorship and merch boilerplate are ignored by prompt instruction, not regex stripping.
 
 ```mermaid
 flowchart TD
     Takeout[Takeout_watch_history_json]
     Takeout -->|summaries_main| SM[uv_run_summaries]
-    Takeout -->|ingest_main| Ingest[uv_run_ingest]
+    Takeout -->|markdown_main| Markdown[uv_run_markdown]
     Desc[(descriptions_json)]
     TxDB[(transcripts_sqlite)]
     SM -->|enqueue| SmDB[(summaries_sqlite)]
@@ -20,8 +20,8 @@ flowchart TD
     TxDB --> SM
     SM -->|fetch_summaries| LLM[Provider_via_pydantic_ai]
     LLM --> SmDB
-    Ingest -->|load_summaries| SmDB
-    Ingest --> MD[Markdown_raw]
+    Markdown -->|load_summaries| SmDB
+    Markdown --> MD[Markdown_raw]
 ```
 
 ## CLI entry
@@ -46,7 +46,7 @@ Existing primary keys are left unchanged, so re-running after a partial night on
 
 [[src/youtubebrain/summaries.py#load_summaries]] is a wrapper over [[src/youtubebrain/cache.py#StatusCache#load_ok]].
 
-If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case.
+If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so markdown can render `_(unavailable)_` for every other case.
 
 ## Fetch loop
 

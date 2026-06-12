@@ -4,23 +4,23 @@ lat:
 ---
 # Transcripts
 
-Fetches captions outside the YouTube Data API, stores them in SQLite for resumable overnight runs, and exposes plain text for [[ingest#Markdown writer]] via [[transcripts#Read API]].
+Fetches captions outside the YouTube Data API, stores them in SQLite for resumable overnight runs, and exposes plain text for [[markdown#Markdown writer]] via [[transcripts#Read API]].
 
-The pipeline mirrors [[descriptions]]: a slow fetcher persists durable state, while [[src/youtubebrain/ingest.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. YouTube does not expose transcripts through the official Data API, so this path uses Innertube-style clients and optional fallbacks aligned with the project research plan.
+The pipeline mirrors [[descriptions]]: a slow fetcher persists durable state, while [[src/youtubebrain/markdown.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. YouTube does not expose transcripts through the official Data API, so this path uses Innertube-style clients and optional fallbacks aligned with the project research plan.
 
 ```mermaid
 flowchart TD
     Takeout[Takeout_watch_history_json]
     Takeout -->|transcripts_main| TX[uv_run_transcripts]
-    Takeout -->|ingest_main| Ingest[uv_run_ingest]
+    Takeout -->|markdown_main| Markdown[uv_run_markdown]
     TX -->|enqueue| DB[(transcripts_sqlite)]
     TX -->|fetch_transcripts| Fetcher[Resolver_chain]
     Fetcher -->|1| YTA[youtube_transcript_api]
     Fetcher -->|2| YTDLP[yt_dlp_subprocess]
     Fetcher -->|3| PTF[pytubefix]
     Fetcher --> DB
-    Ingest -->|load_transcripts| DB
-    Ingest -->|Transcript_heading| MD[Markdown_raw]
+    Markdown -->|load_transcripts| DB
+    Markdown -->|Transcript_heading| MD[Markdown_raw]
 ```
 
 ## CLI entry
@@ -33,7 +33,7 @@ It calls [[src/youtubebrain/transcripts.py#init_db]], [[src/youtubebrain/transcr
 
 [[src/youtubebrain/transcripts.py#init_db]] delegates to [[src/youtubebrain/cache.py#StatusCache#init_db]] via a table-specific `StatusCache` configured for `transcripts`.
 
-Shared base columns come from [[cache#StatusCache API]]: `text` holds joined plain words for [[ingest#Markdown writer]], and `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and retry caps. The transcripts table adds worker-specific extras so fallback metadata remains queryable: `language` and `is_generated` mirror the winning caption track, `raw_json` stores timed snippet JSON when available, and `source` records which resolver won — `yta`, `yt-dlp`, or `pytubefix`.
+Shared base columns come from [[cache#StatusCache API]]: `text` holds joined plain words for [[markdown#Markdown writer]], and `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and retry caps. The transcripts table adds worker-specific extras so fallback metadata remains queryable: `language` and `is_generated` mirror the winning caption track, `raw_json` stores timed snippet JSON when available, and `source` records which resolver won — `yta`, `yt-dlp`, or `pytubefix`.
 
 `status` drives resumability: typical values are `pending` (queued), `ok` (plain text ready for markdown), `no_captions` and `unavailable` (terminal, do not retry in the loop), `error` (transient or unknown; retried until `attempts` reaches the cap), `blocked` (IP or rate signal; not auto-selected until reset), and `age_restricted` (primary path could not auth; fallbacks failed).
 
@@ -47,7 +47,7 @@ Existing primary keys are left unchanged, so re-running after a partial night on
 
 [[src/youtubebrain/transcripts.py#load_transcripts]] is a thin wrapper over [[src/youtubebrain/cache.py#StatusCache#load_ok]].
 
-If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case without extra branching.
+If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so markdown can render `_(unavailable)_` for every other case without extra branching.
 
 ## Fetch loop
 
@@ -79,7 +79,7 @@ If the first stage signalled `age` and both fallbacks fail, status is `age_restr
 
 ## Tests
 
-Pytest coverage for SQLite helpers, resolver fallbacks, fetch pacing hooks, and ingest markdown wiring; each leaf below maps to one `# @lat:` comment in `tests/test_transcripts.py`.
+Pytest coverage for SQLite helpers, resolver fallbacks, and fetch pacing hooks; each leaf below maps to one `# @lat:` comment in `tests/test_transcripts.py`.
 
 ### Schema and enqueue idempotent
 
@@ -152,15 +152,3 @@ Non-numeric env values cause the helper to return the default (3.0, 7.0) window.
 ### Sleep window falls back when min greater than max
 
 When min exceeds max, the helper logs a warning and returns the default window.
-
-### Ingest markdown Transcript section
-
-`_render_markdown` includes `## Transcript` with supplied body text.
-
-### Ingest transcript unavailable placeholder
-
-`None` transcript renders `_(unavailable)_` under Transcript.
-
-### Ingest main folds transcripts
-
-`main` passes stubbed transcript strings into written markdown files.

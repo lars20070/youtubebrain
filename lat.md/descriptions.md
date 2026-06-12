@@ -30,7 +30,7 @@ Repeated runs are resumable because existing primary keys are not overwritten.
 
 [[src/youtubebrain/descriptions.py#load_descriptions]] wraps [[src/youtubebrain/cache.py#StatusCache#load_ok]] and returns `{video_id: text_or_none}`.
 
-Missing databases and non-ok rows map to `None`, which ingest renders as `_(unavailable)_` in the Description section.
+Missing databases and non-ok rows map to `None`, which markdown renders as `_(unavailable)_` in the Description section.
 
 ## Fetch loop
 

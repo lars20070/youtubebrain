@@ -40,6 +40,7 @@ ingest = "youtubebrain.ingest:main"
 descriptions = "youtubebrain.descriptions:main"
 transcripts = "youtubebrain.transcripts:main"
 summaries = "youtubebrain.summaries:main"
+markdown = "youtubebrain.markdown:main"
 embed = "youtubebrain.embeddings:main"
 cluster = "youtubebrain.clusters:main"
 

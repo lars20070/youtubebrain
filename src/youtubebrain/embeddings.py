@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
-import yaml
 
-from youtubebrain import config, logger
+from youtubebrain import config, logger, markdown
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
     from numpy.typing import NDArray
@@ -22,10 +19,6 @@ if TYPE_CHECKING:
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _MODEL_ENV = "EMBEDDING_MODEL"
 _BATCH_SIZE = 64
-_UNAVAILABLE_MARKER = "_(unavailable)_"
-
-_SECTION_SPLIT_RE = re.compile(r"(?m)^##\s+(Summary|Description|Transcript)\s*$")
-_FRONTMATTER_FENCE = "---"
 
 
 class _EncoderProto(Protocol):
@@ -55,84 +48,6 @@ def _model_name() -> str:
     """Resolve the SentenceTransformer model id from EMBEDDING_MODEL env (default all-MiniLM-L6-v2)."""
     config.load_env()
     return os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
-
-
-def _normalize_section(raw: str | None) -> str | None:
-    """Collapse empty bodies and the `_(unavailable)_` placeholder to None."""
-    if raw is None:
-        return None
-    stripped = raw.strip()
-    if not stripped or stripped == _UNAVAILABLE_MARKER:
-        return None
-    return stripped
-
-
-def _split_sections(body: str) -> dict[str, str]:
-    """Split a markdown body into a dict keyed by `## <Name>` heading."""
-    parts = _SECTION_SPLIT_RE.split(body)
-    sections: dict[str, str] = {}
-    for i in range(1, len(parts) - 1, 2):
-        sections[parts[i]] = parts[i + 1]
-    return sections
-
-
-# @lat: [[embeddings#Parsing rules]]
-def read_frontmatter(path: Path) -> tuple[dict, str]:
-    """Read a markdown file; return (frontmatter_mapping, body_after_second_fence).
-
-    Raises ValueError on a missing/unclosed fence, malformed YAML, or a non-mapping
-    top-level value. Empty frontmatter is returned as {}.
-    """
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
-        raise ValueError(f"Missing frontmatter fence in {path}")
-    try:
-        end = next(i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_FENCE)
-    except StopIteration as exc:
-        raise ValueError(f"Unclosed frontmatter in {path}") from exc
-    try:
-        fm = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as exc:
-        raise ValueError(f"Malformed frontmatter in {path}: {exc}") from exc
-    if fm is None:
-        fm = {}
-    elif not isinstance(fm, dict):
-        raise ValueError(f"Malformed frontmatter in {path}: expected mapping but got {type(fm).__name__}")
-    body = "\n".join(lines[end + 1 :])
-    return fm, body
-
-
-# @lat: [[embeddings#Parsing rules]]
-def parse_raw_markdown(path: Path) -> tuple[str, str, str | None, str | None]:
-    """Parse a raw markdown file; return (video_id, title, summary, description)."""
-    fm, body = read_frontmatter(path)
-    video_id = fm.get("id")
-    title = fm.get("title")
-    if not isinstance(video_id, str) or not isinstance(title, str):
-        raise ValueError(f"Frontmatter must include string `id` and `title` in {path}")
-    sections = _split_sections(body)
-    summary = _normalize_section(sections.get("Summary"))
-    description = _normalize_section(sections.get("Description"))
-    return video_id, title, summary, description
-
-
-# @lat: [[embeddings#Text composition]]
-def compose_text(title: str, summary: str | None, description: str | None) -> str | None:
-    """Return title + summary; fall back to title + description; else None."""
-    if summary:
-        return f"{title}\n\n{summary}"
-    if description:
-        return f"{title}\n\n{description}"
-    return None
-
-
-def iter_raw_files(raw_dir: Path | None = None) -> Iterator[Path]:
-    """Yield every `<video_id>.md` file under raw_dir in deterministic order."""
-    raw_dir = config.MARKDOWN_RAW_DIR if raw_dir is None else raw_dir
-    if not raw_dir.exists():
-        return
-    yield from sorted(raw_dir.glob("*.md"))
 
 
 # @lat: [[embeddings#Storage layout]]
@@ -188,17 +103,17 @@ def embed_pending(raw_dir: Path | None = None) -> int:
     pending_texts: list[str] = []
     skipped_no_text = 0
     seen = 0
-    for path in iter_raw_files(raw_dir):
+    for path in markdown.iter_raw_files(raw_dir):
         seen += 1
         try:
-            video_id, title, summary, description = parse_raw_markdown(path)
-        except (ValueError, yaml.YAMLError) as exc:
+            video_id, title, summary, description = markdown.parse_raw_markdown(path)
+        except ValueError as exc:
             logger.warning(f"Skipping {path}: {exc}")
             continue
         # @lat: [[embeddings#Re-embed policy]]
         if video_id in existing_set:
             continue
-        text = compose_text(title, summary, description)
+        text = markdown.compose_text(title, summary, description)
         if text is None:
             skipped_no_text += 1
             continue

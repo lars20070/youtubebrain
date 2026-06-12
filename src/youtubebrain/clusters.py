@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 from pydantic_ai import Agent
 
-from youtubebrain import config, embeddings, logger
+from youtubebrain import config, embeddings, logger, markdown
 from youtubebrain.provider import create_model
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ _LABEL_CONCURRENCY_ENV = "LABEL_CONCURRENCY"
 _REP_TEXT_CHAR_BUDGET = 600
 _OUTLIER_CLUSTER_ID = -1
 _OUTLIER_SLUG = "outliers"
-_FRONTMATTER_FENCE = "---"
+_FRONTMATTER_FENCE = markdown.FRONTMATTER_FENCE
 _PLOT_FIGSIZE = (12, 9)
 _PLOT_DPI = 150
 _PLOT_POINT_SIZE = 4
@@ -205,19 +205,17 @@ def _build_label_agent() -> Agent[None, TopicLabel]:
 # @lat: [[clusters#Representative-doc plumbing]]
 def _load_texts_by_id(ids: list[str]) -> dict[str, str]:
     """Walk Markdown/raw/ once, return {id: composed_text} for ids that match a raw file with content."""
-    import yaml  # noqa: PLC0415
-
     wanted = set(ids)
     out: dict[str, str] = {}
-    for path in embeddings.iter_raw_files():
+    for path in markdown.iter_raw_files():
         try:
-            video_id, title, summary, description = embeddings.parse_raw_markdown(path)
-        except (ValueError, yaml.YAMLError) as exc:
+            video_id, title, summary, description = markdown.parse_raw_markdown(path)
+        except ValueError as exc:
             logger.warning(f"Skipping {path}: {exc}")
             continue
         if video_id not in wanted:
             continue
-        text = embeddings.compose_text(title, summary, description)
+        text = markdown.compose_text(title, summary, description)
         if text:
             out[video_id] = text
     missing = [vid for vid in ids if vid not in out]
@@ -466,14 +464,12 @@ def _resolve_slugs(topics: list[TopicInfo]) -> dict[int, str]:
 # @lat: [[clusters#Wiki topics#Page rendering]]
 def _load_titles_by_id(ids: list[str]) -> dict[str, str]:
     """Walk Markdown/raw/ once; return {id: title} for ids that match a raw file."""
-    import yaml  # noqa: PLC0415
-
     wanted = set(ids)
     out: dict[str, str] = {}
-    for path in embeddings.iter_raw_files():
+    for path in markdown.iter_raw_files():
         try:
-            video_id, title, _summary, _description = embeddings.parse_raw_markdown(path)
-        except (ValueError, yaml.YAMLError) as exc:
+            video_id, title, _summary, _description = markdown.parse_raw_markdown(path)
+        except ValueError as exc:
             logger.warning(f"Skipping {path}: {exc}")
             continue
         if video_id in wanted:
@@ -535,7 +531,7 @@ def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
     """
     import yaml  # noqa: PLC0415
 
-    fm, body_tail = embeddings.read_frontmatter(path)
+    fm, body_tail = markdown.read_frontmatter(path)
     fm["topic"] = slug
     fm["cluster_id"] = cluster_id
     yaml_body = yaml.safe_dump(
@@ -609,9 +605,9 @@ def _iter_channels_from_raw() -> dict[str, dict[str, str]]:
     path separators / `..` are rejected for filesystem safety.
     """
     channels: dict[str, dict[str, str]] = {}
-    for path in embeddings.iter_raw_files():
+    for path in markdown.iter_raw_files():
         try:
-            fm, _ = embeddings.read_frontmatter(path)
+            fm, _ = markdown.read_frontmatter(path)
         except (ValueError, OSError) as exc:
             logger.warning(f"Skipping {path} during creator scan: {exc}")
             continue
