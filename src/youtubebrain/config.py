@@ -15,6 +15,8 @@ WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-histo
 MARKDOWN_RAW_DIR = Path("Markdown/raw")
 
 CACHE_DIR = Path("Markdown/.cache")
+DESCRIPTIONS_DB_PATH = CACHE_DIR / "descriptions.sqlite"
+# Legacy JSON cache path from pre-step-4; cleaned up by descriptions.main().
 DESCRIPTIONS_CACHE_PATH = CACHE_DIR / "descriptions.json"
 TRANSCRIPTS_DB_PATH = CACHE_DIR / "transcripts.sqlite"
 SUMMARIES_DB_PATH = CACHE_DIR / "summaries.sqlite"

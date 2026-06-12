@@ -1,12 +1,11 @@
 """Load YouTube watch history from Google Takeout."""
 
-import asyncio
 from pathlib import Path
 
 import yaml
 
 from youtubebrain import config, logger, takeout
-from youtubebrain.descriptions import fetch_descriptions
+from youtubebrain.descriptions import load_descriptions
 from youtubebrain.models import WatchedVideo
 from youtubebrain.summaries import load_summaries
 from youtubebrain.transcripts import load_transcripts
@@ -79,7 +78,7 @@ def main() -> None:
     logger.info("Starting main function.")
     videos = takeout.load_watch_history(config.WATCH_HISTORY_PATH)
     ids = [takeout.video_id(v.title_url) for v in videos if v.title_url is not None]
-    descriptions = asyncio.run(fetch_descriptions(ids))
+    descriptions = load_descriptions(ids)
     transcripts = load_transcripts(ids)
     summaries = load_summaries(ids)
     count = 0

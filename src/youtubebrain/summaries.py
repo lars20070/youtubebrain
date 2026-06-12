@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from typing import TYPE_CHECKING
 
@@ -11,6 +10,7 @@ from pydantic_ai import Agent
 
 from youtubebrain import config, logger, takeout
 from youtubebrain.cache import StatusCache
+from youtubebrain.descriptions import load_descriptions
 from youtubebrain.provider import create_model
 from youtubebrain.transcripts import load_transcripts
 
@@ -33,14 +33,6 @@ and sponsor read-outs inside transcripts. Focus on the substantive content of th
 
 Keep the summary focused and readable (roughly two to four short paragraphs).\
 """
-
-
-def _load_descriptions_cache(path: Path | None = None) -> dict[str, str | None]:
-    """Read the descriptions JSON cache; return an empty dict if absent."""
-    path = config.DESCRIPTIONS_CACHE_PATH if path is None else path
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # @lat: [[summaries#Transcript truncation]]
@@ -126,8 +118,8 @@ async def fetch_summaries(db_path: Path | None = None) -> None:
         vid = takeout.video_id(video.title_url)
         titles[vid] = video.title.removeprefix("Watched ")
 
-    descriptions = _load_descriptions_cache()
     all_ids = list(titles.keys())
+    descriptions = load_descriptions(all_ids)
     transcripts = load_transcripts(all_ids)
 
     con = status_cache.connect()

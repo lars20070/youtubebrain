@@ -450,7 +450,7 @@ def test_main_folds_transcripts(
     monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
 
-    async def fake_desc(ids: list[str], cache_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+    def fake_desc(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
         return dict.fromkeys(ids, "d")
 
     def fake_load(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
@@ -459,7 +459,7 @@ def test_main_folds_transcripts(
     def fake_summaries(ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
         return {"abc123": "summary body"}
 
-    monkeypatch.setattr(ingest, "fetch_descriptions", fake_desc)
+    monkeypatch.setattr(ingest, "load_descriptions", fake_desc)
     monkeypatch.setattr(ingest, "load_transcripts", fake_load)
     monkeypatch.setattr(ingest, "load_summaries", fake_summaries)
     main()

@@ -64,10 +64,10 @@ def _parse_frontmatter(body: str) -> dict[str, object]:
     return yaml.safe_load(body[4:end])
 
 
-def _stub_fetch_descriptions(descriptions: dict[str, str | None]):  # noqa: ANN202
-    """Build an async stub for ingest.fetch_descriptions that returns a fixed mapping."""
+def _stub_load_descriptions(descriptions: dict[str, str | None]):  # noqa: ANN202
+    """Build a stub for ingest.load_descriptions that returns a fixed mapping."""
 
-    async def _stub(video_ids: list[str], cache_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
+    def _stub(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
         return {vid: descriptions.get(vid) for vid in video_ids}
 
     return _stub
@@ -225,8 +225,8 @@ def test_main_writes_files(
     monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(
         ingest,
-        "fetch_descriptions",
-        _stub_fetch_descriptions({"abc123": "first desc", "JWWDqbcQoXA": "second desc"}),
+        "load_descriptions",
+        _stub_load_descriptions({"abc123": "first desc", "JWWDqbcQoXA": "second desc"}),
     )
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
@@ -248,7 +248,7 @@ def test_main_skips_unresolved(
     out_dir = tmp_path / "out"
     monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
-    monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
+    monkeypatch.setattr(ingest, "load_descriptions", _stub_load_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
     main()
@@ -266,7 +266,7 @@ def test_main_skips_non_watch(
     out_dir = tmp_path / "out"
     monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
     monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
-    monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
+    monkeypatch.setattr(ingest, "load_descriptions", _stub_load_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
     main()

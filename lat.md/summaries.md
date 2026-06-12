@@ -52,7 +52,7 @@ If the database file is missing, every requested id maps to `None`. Otherwise on
 
 [[src/youtubebrain/summaries.py#fetch_summaries]] runs the summarization worker: one video at a time, async LLM calls via pydantic-ai.
 
-Row selection uses [[src/youtubebrain/cache.py#StatusCache#next_retryable]] with statuses `pending/error` and attempt cap 5. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows are persisted through [[src/youtubebrain/cache.py#StatusCache#record_result]], and progress logging uses [[src/youtubebrain/cache.py#StatusCache#counts]].
+Row selection uses [[src/youtubebrain/cache.py#StatusCache#next_retryable]] with statuses `pending/error` and attempt cap 5. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions via [[descriptions#Read API]], and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows are persisted through [[src/youtubebrain/cache.py#StatusCache#record_result]], and progress logging uses [[src/youtubebrain/cache.py#StatusCache#counts]].
 
 ## Agent build
 

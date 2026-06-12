@@ -6,7 +6,7 @@ Central home for every filesystem path the pipeline reads or writes, plus the si
 
 All pipeline paths are repo-root-relative module-level `Path` constants in `src/youtubebrain/config.py`; no other module defines one.
 
-They cover the Takeout export ([[src/youtubebrain/config.py#WATCH_HISTORY_PATH]]), the raw markdown corpus ([[src/youtubebrain/config.py#MARKDOWN_RAW_DIR]]), the three caches under [[src/youtubebrain/config.py#CACHE_DIR]] (descriptions JSON, transcripts and summaries SQLite), the embedding store under [[src/youtubebrain/config.py#EMBEDDINGS_DIR]], the clustering store under [[src/youtubebrain/config.py#CLUSTERING_DIR]], and the wiki seed folders ([[src/youtubebrain/config.py#WIKI_TOPICS_DIR]], [[src/youtubebrain/config.py#WIKI_CREATORS_DIR]]).
+They cover the Takeout export ([[src/youtubebrain/config.py#WATCH_HISTORY_PATH]]), the raw markdown corpus ([[src/youtubebrain/config.py#MARKDOWN_RAW_DIR]]), the cache directory ([[src/youtubebrain/config.py#CACHE_DIR]]) with three SQLite stores ([[src/youtubebrain/config.py#DESCRIPTIONS_DB_PATH]], [[src/youtubebrain/config.py#TRANSCRIPTS_DB_PATH]], [[src/youtubebrain/config.py#SUMMARIES_DB_PATH]]) plus the legacy descriptions JSON cleanup path ([[src/youtubebrain/config.py#DESCRIPTIONS_CACHE_PATH]]), the embedding store under [[src/youtubebrain/config.py#EMBEDDINGS_DIR]], the clustering store under [[src/youtubebrain/config.py#CLUSTERING_DIR]], and the wiki seed folders ([[src/youtubebrain/config.py#WIKI_TOPICS_DIR]], [[src/youtubebrain/config.py#WIKI_CREATORS_DIR]]).
 
 Functions that accept a path take `Path | None = None` and resolve the config default inside the body — never as a def-time default — so a `monkeypatch.setattr(config, "X", tmp_path)` in a test takes effect everywhere at once.
 

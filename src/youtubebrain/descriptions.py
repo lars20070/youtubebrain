@@ -1,47 +1,24 @@
-"""Fetch YouTube video descriptions via the YouTube Data API v3 with on-disk caching."""
+"""Fetch YouTube video descriptions via the YouTube Data API v3 into SQLite."""
 
-import asyncio
-import json
+from __future__ import annotations
+
 import os
-from collections.abc import Iterable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
-from youtubebrain import config, logger
+from youtubebrain import config, logger, takeout
+from youtubebrain.cache import StatusCache
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _BATCH_SIZE = 50
+_MAX_ATTEMPTS = 5
 _API_KEY_ENV = "API_KEY_YOUTUBE"
 _HTTP_TIMEOUT = 30.0
-
-
-# @lat: [[descriptions#Cache]]
-def _load_cache(path: Path) -> dict[str, str | None]:
-    """Read the JSON cache from disk, returning an empty dict if absent."""
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-# @lat: [[descriptions#Cache]]
-def _save_cache(path: Path, cache: dict[str, str | None]) -> None:
-    """Persist the cache to disk atomically, ensuring the parent directory exists."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(cache, indent=2, sort_keys=True, ensure_ascii=False)
-    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
-    with open(tmp_path, "w", encoding="utf-8") as fh:
-        fh.write(payload)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp_path, path)
-    dir_fd = os.open(path.parent, os.O_RDONLY)
-    try:
-        os.fsync(dir_fd)
-    except OSError:
-        pass
-    finally:
-        os.close(dir_fd)
 
 
 # @lat: [[descriptions#API key requirement]]
@@ -58,16 +35,16 @@ def _get_api_key() -> str:
     return key
 
 
-def _chunks(seq: list[str], n: int = _BATCH_SIZE) -> Iterable[list[str]]:
+def _chunks(seq: list[str], n: int = _BATCH_SIZE) -> Iterator[list[str]]:
     """Yield successive n-sized slices from seq."""
     for i in range(0, len(seq), n):
         yield seq[i : i + n]
 
 
 # @lat: [[descriptions#API client]]
-async def _fetch_batch(client: httpx.AsyncClient, ids: list[str], api_key: str) -> dict[str, str]:
+def _fetch_batch(client: httpx.Client, ids: list[str], api_key: str) -> dict[str, str]:
     """Fetch descriptions for up to 50 video IDs; return {id: description} for items the API returned."""
-    response = await client.get(
+    response = client.get(
         YOUTUBE_API_URL,
         params={"part": "snippet", "id": ",".join(ids), "key": api_key, "maxResults": _BATCH_SIZE},
     )
@@ -76,42 +53,103 @@ async def _fetch_batch(client: httpx.AsyncClient, ids: list[str], api_key: str) 
     return {item["id"]: item["snippet"].get("description", "") for item in items}
 
 
-# @lat: [[descriptions#API client]]
-async def fetch_descriptions(
-    video_ids: list[str],
-    cache_path: Path | None = None,
-) -> dict[str, str | None]:
-    """Return {video_id: description_or_None} for every input ID, using the cache to skip prior fetches."""
-    cache_path = config.DESCRIPTIONS_CACHE_PATH if cache_path is None else cache_path
-    cache = await asyncio.to_thread(_load_cache, cache_path)
-    unique_ids = list(dict.fromkeys(video_ids))
-    missing = [vid for vid in unique_ids if vid not in cache]
-    cached_count = len(unique_ids) - len(missing)
-    logger.info(f"Descriptions: {cached_count} cached, {len(missing)} to fetch.")
+# @lat: [[descriptions#SQLite schema]]
+def init_db(db_path: Path | None = None) -> None:
+    """Create the descriptions table and indexes if missing; enable WAL."""
+    _cache(db_path).init_db()
 
-    failed_count = 0
-    if missing:
+
+# @lat: [[descriptions#Enqueue]]
+def enqueue(video_ids: list[str], db_path: Path | None = None) -> None:
+    """Insert video IDs as pending rows; existing primary keys are left unchanged."""
+    _cache(db_path).enqueue(video_ids)
+
+
+# @lat: [[descriptions#Read API]]
+def load_descriptions(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:
+    """Return description text for each id; None when missing or status is not ok."""
+    return _cache(db_path).load_ok(video_ids)
+
+
+# @lat: [[descriptions#Fetch loop]]
+def fetch_descriptions(db_path: Path | None = None) -> None:
+    """Process pending/error rows in 50-id batches until none remain or attempts cap is reached."""
+    status_cache = _cache(db_path)
+    status_cache.init_db()
+    con = status_cache.connect()
+    try:
+        pending_ids = status_cache.pending_ids(con, max_attempts=_MAX_ATTEMPTS)
+        if not pending_ids:
+            logger.info("Descriptions: no pending rows; nothing to fetch.")
+            return
+
         api_key = _get_api_key()
-        batches = list(_chunks(missing))
-        logger.info(f"Fetching {len(missing)} descriptions in {len(batches)} batch(es).")
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        batches = list(_chunks(pending_ids))
+        logger.info(f"Fetching {len(pending_ids)} descriptions in {len(batches)} batch(es).")
+        with httpx.Client(timeout=_HTTP_TIMEOUT) as client:
             for i, batch in enumerate(batches, start=1):
                 try:
-                    fetched = await _fetch_batch(client, batch, api_key)
-                except httpx.HTTPError as e:
+                    fetched = _fetch_batch(client, batch, api_key)
+                except httpx.HTTPError as exc:
                     # @lat: [[descriptions#API failures]]
-                    failed_count += len(batch)
-                    logger.warning(f"Batch {i}/{len(batches)} failed ({len(batch)} ids, will retry next run): {e!r}")
+                    for vid in batch:
+                        status_cache.record_attempt(con, vid, "error", str(exc))
+                    logger.warning(f"Batch {i}/{len(batches)} failed ({len(batch)} ids, will retry next run): {exc!r}")
                     continue
-                for vid in batch:
-                    # @lat: [[descriptions#Missing videos]]
-                    cache[vid] = fetched.get(vid)
-                await asyncio.to_thread(_save_cache, cache_path, cache)
-                logger.info(f"Batch {i}/{len(batches)}: fetched {len(fetched)}/{len(batch)}.")
 
-    result = {vid: cache.get(vid) for vid in unique_ids}
-    available = sum(1 for v in result.values() if v is not None)
-    logger.info(
-        f"Descriptions ready: {available} available, {len(result) - available} unavailable ({failed_count} failed, will retry next run).",
-    )
-    return result
+                ok_count = 0
+                missing_count = 0
+                for vid in batch:
+                    description = fetched.get(vid)
+                    if description is None:
+                        # @lat: [[descriptions#Missing videos]]
+                        status_cache.record_result(con, vid, "missing", text=None, error_message=None)
+                        missing_count += 1
+                        continue
+                    status_cache.record_result(con, vid, "ok", text=description, error_message=None)
+                    ok_count += 1
+                logger.info(f"Batch {i}/{len(batches)}: ok={ok_count}, missing={missing_count}.")
+
+        n_ok, n_total = status_cache.counts(con)
+        n_missing = int(con.execute("SELECT COUNT(*) FROM descriptions WHERE status = 'missing'").fetchone()[0])
+        n_retryable_error = int(
+            con.execute(
+                "SELECT COUNT(*) FROM descriptions WHERE status = 'error' AND attempts < ?",
+                (_MAX_ATTEMPTS,),
+            ).fetchone()[0],
+        )
+        logger.info(
+            f"Descriptions ready: ok={n_ok}, missing={n_missing}, retryable_errors={n_retryable_error}, total={n_total}.",
+        )
+    finally:
+        con.close()
+
+
+def _remove_legacy_json_cache() -> None:
+    legacy_path = config.DESCRIPTIONS_CACHE_PATH
+    legacy_tmp = legacy_path.with_suffix(f"{legacy_path.suffix}.tmp")
+    removed: list[str] = []
+    for path in (legacy_path, legacy_tmp):
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
+    if removed:
+        logger.info(f"Removed legacy descriptions cache file(s): {', '.join(removed)}")
+
+
+# @lat: [[descriptions#CLI entry]]
+def main() -> None:
+    """Load Takeout IDs, enqueue pending rows, then run the resumable descriptions fetch loop."""
+    logger.info("Starting descriptions fetcher.")
+    _remove_legacy_json_cache()
+    ids = takeout.load_video_ids()
+    init_db()
+    enqueue(ids)
+    logger.info(f"Enqueued {len(ids)} video ids; starting fetch loop.")
+    fetch_descriptions()
+    logger.info("Descriptions fetcher finished.")
+
+
+def _cache(db_path: Path | None = None) -> StatusCache:
+    resolved_path = config.DESCRIPTIONS_DB_PATH if db_path is None else db_path
+    return StatusCache(resolved_path, "descriptions")
