@@ -6,16 +6,16 @@ import asyncio
 import json
 import os
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
-from youtubebrain import logger
-from youtubebrain.descriptions import DESCRIPTIONS_CACHE_PATH
+from youtubebrain import config, logger
 from youtubebrain.provider import create_model
-from youtubebrain.transcripts import TRANSCRIPTS_DB_PATH, load_transcripts
+from youtubebrain.transcripts import load_transcripts
 
-SUMMARIES_DB_PATH = Path("Markdown/.cache/summaries.sqlite")
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _TRANSCRIPT_CHAR_LIMIT = 12000
 _DEFAULT_MODEL = "qwen3:32b"
@@ -34,8 +34,9 @@ Keep the summary focused and readable (roughly two to four short paragraphs).\
 """
 
 
-def _load_descriptions_cache(path: Path = DESCRIPTIONS_CACHE_PATH) -> dict[str, str | None]:
+def _load_descriptions_cache(path: Path | None = None) -> dict[str, str | None]:
     """Read the descriptions JSON cache; return an empty dict if absent."""
+    path = config.DESCRIPTIONS_CACHE_PATH if path is None else path
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
@@ -91,8 +92,9 @@ async def summarize_one(
 
 
 # @lat: [[summaries#SQLite schema]]
-def init_db(db_path: Path = SUMMARIES_DB_PATH) -> None:
+def init_db(db_path: Path | None = None) -> None:
     """Create the summaries table and indexes if missing; enable WAL."""
+    db_path = config.SUMMARIES_DB_PATH if db_path is None else db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path)
     try:
@@ -118,8 +120,9 @@ def init_db(db_path: Path = SUMMARIES_DB_PATH) -> None:
 
 
 # @lat: [[summaries#Enqueue]]
-def enqueue(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> None:
+def enqueue(video_ids: list[str], db_path: Path | None = None) -> None:
     """Insert video IDs as pending rows; existing primary keys are left unchanged."""
+    db_path = config.SUMMARIES_DB_PATH if db_path is None else db_path
     init_db(db_path)
     con = sqlite3.connect(db_path)
     try:
@@ -133,8 +136,9 @@ def enqueue(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> None:
 
 
 # @lat: [[summaries#Read API]]
-def load_summaries(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> dict[str, str | None]:
+def load_summaries(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:
     """Return summary text for each id; None when missing or status is not ok."""
+    db_path = config.SUMMARIES_DB_PATH if db_path is None else db_path
     unique = list(dict.fromkeys(video_ids))
     if not unique:
         return {}
@@ -159,15 +163,16 @@ def load_summaries(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> d
 
 
 # @lat: [[summaries#Fetch loop]]
-async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
+async def fetch_summaries(db_path: Path | None = None) -> None:
     """Process pending/error rows until none remain or attempts cap is reached."""
+    db_path = config.SUMMARIES_DB_PATH if db_path is None else db_path
     init_db(db_path)
     agent = _build_agent()
     model_name = os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
 
-    from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
+    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
 
-    videos = load_watch_history(WATCH_HISTORY_PATH)
+    videos = load_watch_history(config.WATCH_HISTORY_PATH)
     titles: dict[str, str] = {}
     for video in videos:
         if video.title_url is None:
@@ -177,7 +182,7 @@ async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
 
     descriptions = _load_descriptions_cache()
     all_ids = list(titles.keys())
-    transcripts = load_transcripts(all_ids, TRANSCRIPTS_DB_PATH)
+    transcripts = load_transcripts(all_ids)
 
     con = sqlite3.connect(db_path)
     try:
@@ -231,10 +236,10 @@ async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
 
 
 async def _main_async() -> None:
-    from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
+    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
 
     logger.info("Starting summaries fetcher.")
-    videos = load_watch_history(WATCH_HISTORY_PATH)
+    videos = load_watch_history(config.WATCH_HISTORY_PATH)
     ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
     init_db()
     enqueue(ids)

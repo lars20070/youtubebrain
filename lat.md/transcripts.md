@@ -27,7 +27,7 @@ flowchart TD
 
 [[src/youtubebrain/transcripts.py#main]] is the `uv run transcripts` entry point: Takeout IDs, enqueue, then the fetch loop.
 
-It imports [[ingest#Loader]] helpers (`WATCH_HISTORY_PATH`, `load_watch_history`), extracts ids with [[src/youtubebrain/ingest.py#_video_id]], calls [[src/youtubebrain/transcripts.py#init_db]] and [[src/youtubebrain/transcripts.py#enqueue]], then [[src/youtubebrain/transcripts.py#fetch_transcripts]]. It avoids a top-level `ingest` import to prevent cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/transcripts.py#load_transcripts]].
+It imports the [[ingest#Loader]] helper `load_watch_history` (reading [[src/youtubebrain/config.py#WATCH_HISTORY_PATH]]), extracts ids with [[src/youtubebrain/ingest.py#_video_id]], calls [[src/youtubebrain/transcripts.py#init_db]] and [[src/youtubebrain/transcripts.py#enqueue]], then [[src/youtubebrain/transcripts.py#fetch_transcripts]]. It avoids a top-level `ingest` import to prevent cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/transcripts.py#load_transcripts]].
 
 ## SQLite schema
 

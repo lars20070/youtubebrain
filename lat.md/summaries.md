@@ -28,7 +28,7 @@ flowchart TD
 
 [[src/youtubebrain/summaries.py#main]] is the `uv run summaries` entry point: Takeout IDs, enqueue, then the async fetch loop.
 
-It lazy-imports [[ingest#Loader]] helpers (`WATCH_HISTORY_PATH`, `load_watch_history`, `_video_id`) inside [[src/youtubebrain/summaries.py#_main_async]] to avoid import cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/summaries.py#load_summaries]].
+It lazy-imports [[ingest#Loader]] helpers (`load_watch_history`, `_video_id`) inside [[src/youtubebrain/summaries.py#_main_async]] to avoid import cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/summaries.py#load_summaries]]; the history path comes from [[src/youtubebrain/config.py#WATCH_HISTORY_PATH]].
 
 ## SQLite schema
 

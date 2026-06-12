@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from youtubebrain import config
 from youtubebrain import embeddings as emb
 
 if TYPE_CHECKING:
@@ -74,12 +75,12 @@ class _StubEncoder:
 
 
 def _patch_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Point the module's persistence constants at tmp_path; return the embeddings dir."""
+    """Point the config persistence constants at tmp_path; return the embeddings dir."""
     out_dir = tmp_path / "embeddings"
-    monkeypatch.setattr(emb, "EMBEDDINGS_DIR", out_dir)
-    monkeypatch.setattr(emb, "EMBEDDINGS_NPY_PATH", out_dir / "embeddings.npy")
-    monkeypatch.setattr(emb, "IDS_JSON_PATH", out_dir / "ids.json")
-    monkeypatch.setattr(emb, "META_JSON_PATH", out_dir / "meta.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_DIR", out_dir)
+    monkeypatch.setattr(config, "EMBEDDINGS_NPY_PATH", out_dir / "embeddings.npy")
+    monkeypatch.setattr(config, "EMBEDDINGS_IDS_JSON_PATH", out_dir / "ids.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_META_JSON_PATH", out_dir / "meta.json")
     return out_dir
 
 

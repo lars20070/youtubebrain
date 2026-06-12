@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 import yaml
 
-from youtubebrain import clusters
-from youtubebrain import embeddings as emb
+from youtubebrain import clusters, config
 from youtubebrain.clusters import TopicInfo, TopicLabel
 
 if TYPE_CHECKING:
@@ -56,29 +55,29 @@ def _write_md(path: Path, **fields: str) -> Path:
 
 
 def _patch_stores(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path, Path]:
-    """Redirect embeddings + clustering + raw-markdown constants at tmp paths."""
+    """Redirect embeddings + clustering + raw-markdown config constants at tmp paths."""
     emb_dir = tmp_path / "embeddings"
-    monkeypatch.setattr(emb, "EMBEDDINGS_DIR", emb_dir)
-    monkeypatch.setattr(emb, "EMBEDDINGS_NPY_PATH", emb_dir / "embeddings.npy")
-    monkeypatch.setattr(emb, "IDS_JSON_PATH", emb_dir / "ids.json")
-    monkeypatch.setattr(emb, "META_JSON_PATH", emb_dir / "meta.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_DIR", emb_dir)
+    monkeypatch.setattr(config, "EMBEDDINGS_NPY_PATH", emb_dir / "embeddings.npy")
+    monkeypatch.setattr(config, "EMBEDDINGS_IDS_JSON_PATH", emb_dir / "ids.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_META_JSON_PATH", emb_dir / "meta.json")
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    monkeypatch.setattr(emb, "MARKDOWN_RAW_DIR", raw_dir)
+    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", raw_dir)
 
     cl_dir = tmp_path / "clustering"
-    monkeypatch.setattr(clusters, "CLUSTERING_DIR", cl_dir)
-    monkeypatch.setattr(clusters, "ASSIGNMENTS_JSON_PATH", cl_dir / "assignments.json")
-    monkeypatch.setattr(clusters, "TOPICS_JSON_PATH", cl_dir / "topics.json")
-    monkeypatch.setattr(clusters, "META_JSON_PATH", cl_dir / "meta.json")
-    monkeypatch.setattr(clusters, "MODEL_DIR", cl_dir / "bertopic_model")
+    monkeypatch.setattr(config, "CLUSTERING_DIR", cl_dir)
+    monkeypatch.setattr(config, "ASSIGNMENTS_JSON_PATH", cl_dir / "assignments.json")
+    monkeypatch.setattr(config, "TOPICS_JSON_PATH", cl_dir / "topics.json")
+    monkeypatch.setattr(config, "CLUSTERING_META_JSON_PATH", cl_dir / "meta.json")
+    monkeypatch.setattr(config, "BERTOPIC_MODEL_DIR", cl_dir / "bertopic_model")
 
     wiki_topics_dir = tmp_path / "wiki" / "topics"
-    monkeypatch.setattr(clusters, "WIKI_TOPICS_DIR", wiki_topics_dir)
+    monkeypatch.setattr(config, "WIKI_TOPICS_DIR", wiki_topics_dir)
 
     wiki_creators_dir = tmp_path / "wiki" / "creators"
-    monkeypatch.setattr(clusters, "WIKI_CREATORS_DIR", wiki_creators_dir)
+    monkeypatch.setattr(config, "WIKI_CREATORS_DIR", wiki_creators_dir)
     return emb_dir, raw_dir, cl_dir
 
 
@@ -273,7 +272,7 @@ def test_assignments_align_with_ids_json(monkeypatch: pytest.MonkeyPatch, tmp_pa
     clusters.cluster_all()
 
     saved_ids = json.loads((emb_dir / "ids.json").read_text(encoding="utf-8"))
-    saved_assignments = json.loads(clusters.ASSIGNMENTS_JSON_PATH.read_text(encoding="utf-8"))
+    saved_assignments = json.loads(config.ASSIGNMENTS_JSON_PATH.read_text(encoding="utf-8"))
     assert len(saved_assignments) == len(saved_ids)
     assert saved_assignments == assignments_list
 
@@ -296,7 +295,7 @@ def test_meta_records_run_summary_fields(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     clusters.cluster_all()
 
-    meta = json.loads(clusters.META_JSON_PATH.read_text(encoding="utf-8"))
+    meta = json.loads(config.CLUSTERING_META_JSON_PATH.read_text(encoding="utf-8"))
     assert meta["n_clusters"] == 2
     assert meta["n_outliers"] == 1
     assert meta["min_cluster_size"] == 2
@@ -321,7 +320,7 @@ def test_meta_lists_cluster_sizes(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     clusters.cluster_all()
 
-    meta = json.loads(clusters.META_JSON_PATH.read_text(encoding="utf-8"))
+    meta = json.loads(config.CLUSTERING_META_JSON_PATH.read_text(encoding="utf-8"))
     assert meta["clusters"] == [
         {"cluster_id": 0, "label": "a-cluster", "count": 3},
         {"cluster_id": 1, "label": "b-cluster", "count": 2},
@@ -403,7 +402,7 @@ def test_cluster_all_produces_aligned_assignments_and_topic_infos(monkeypatch: p
     n_clusters = clusters.cluster_all()
     assert n_clusters == 2
 
-    topics_payload = json.loads(clusters.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
+    topics_payload = json.loads(config.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
     cluster_ids = sorted(t["cluster_id"] for t in topics_payload)
     assert cluster_ids == [0, 1]
     labels = {t["cluster_id"]: t["label"] for t in topics_payload}
@@ -452,7 +451,7 @@ def test_outlier_cluster_gets_synthetic_topic_info(monkeypatch: pytest.MonkeyPat
 
     clusters.cluster_all()
 
-    topics_payload = json.loads(clusters.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
+    topics_payload = json.loads(config.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
     outlier = next(t for t in topics_payload if t["cluster_id"] == -1)
     assert outlier["label"] == "outliers"
     assert outlier["keywords"] == []
@@ -479,7 +478,7 @@ def test_agent_exception_falls_back_per_cluster(monkeypatch: pytest.MonkeyPatch,
 
     clusters.cluster_all()
 
-    topics_payload = json.loads(clusters.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
+    topics_payload = json.loads(config.TOPICS_JSON_PATH.read_text(encoding="utf-8"))
     by_id = {t["cluster_id"]: t for t in topics_payload}
     assert by_id[0]["label"] == "topic-0-BOOM"
     assert by_id[1]["label"] == "gamma-cluster"
@@ -492,8 +491,8 @@ def test_refuses_when_embedding_model_changed(monkeypatch: pytest.MonkeyPatch, t
     ids = [f"vid{i:02d}" for i in range(6)]
     _seed_embeddings(emb_dir, ids, model="new-model")
     cl_dir.mkdir(parents=True, exist_ok=True)
-    clusters.ASSIGNMENTS_JSON_PATH.write_text(json.dumps([0] * 6), encoding="utf-8")
-    clusters.TOPICS_JSON_PATH.write_text(
+    config.ASSIGNMENTS_JSON_PATH.write_text(json.dumps([0] * 6), encoding="utf-8")
+    config.TOPICS_JSON_PATH.write_text(
         json.dumps(
             [
                 {
@@ -508,13 +507,13 @@ def test_refuses_when_embedding_model_changed(monkeypatch: pytest.MonkeyPatch, t
         ),
         encoding="utf-8",
     )
-    clusters.META_JSON_PATH.write_text(json.dumps({"embedding_model": "old-model"}), encoding="utf-8")
+    config.CLUSTERING_META_JSON_PATH.write_text(json.dumps({"embedding_model": "old-model"}), encoding="utf-8")
     monkeypatch.setenv(clusters._MIN_SIZE_ENV, "2")
 
     with pytest.raises(ValueError, match="embedding model changed"):
         clusters.cluster_all()
     # cluster files not overwritten
-    assert json.loads(clusters.META_JSON_PATH.read_text(encoding="utf-8"))["embedding_model"] == "old-model"
+    assert json.loads(config.CLUSTERING_META_JSON_PATH.read_text(encoding="utf-8"))["embedding_model"] == "old-model"
 
 
 # @lat: [[clusters#Tests#Atomic write leaves no partial files on crash]]
@@ -666,7 +665,7 @@ def test_resolve_slugs_sanitises_unsafe_labels() -> None:
 def test_write_wiki_topics_wipes_stale_folders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A pre-existing topic folder is removed before the current run writes its slugs."""
     _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
-    stale_dir = clusters.WIKI_TOPICS_DIR / "stale"
+    stale_dir = config.WIKI_TOPICS_DIR / "stale"
     stale_dir.mkdir(parents=True)
     (stale_dir / "stale.md").write_text("old", encoding="utf-8")
 
@@ -676,7 +675,7 @@ def test_write_wiki_topics_wipes_stale_folders(monkeypatch: pytest.MonkeyPatch, 
     clusters.write_wiki_topics([0, 0], ["vid1", "vid2"], topics)
 
     assert not stale_dir.exists()
-    assert (clusters.WIKI_TOPICS_DIR / "fresh-topic" / "fresh-topic.md").exists()
+    assert (config.WIKI_TOPICS_DIR / "fresh-topic" / "fresh-topic.md").exists()
 
 
 # @lat: [[clusters#Wiki topics#Tests#Topic page rendered correctly]]
@@ -695,7 +694,7 @@ def test_topic_page_frontmatter_and_member_list(monkeypatch: pytest.MonkeyPatch,
     )
     clusters.write_wiki_topics([0, 0], ["vidA", "vidB"], [topic])
 
-    page = (clusters.WIKI_TOPICS_DIR / "demo-cluster" / "demo-cluster.md").read_text(encoding="utf-8")
+    page = (config.WIKI_TOPICS_DIR / "demo-cluster" / "demo-cluster.md").read_text(encoding="utf-8")
     fence = "---"
     assert page.startswith(fence + "\n")
     _, fm_text, body = page.split(fence + "\n", 2)
@@ -773,7 +772,7 @@ def test_outliers_folder_and_raw_injection(monkeypatch: pytest.MonkeyPatch, tmp_
     ]
     clusters.write_wiki_topics([-1, 0], ["vidA", "vidB"], topics)
 
-    out_md = clusters.WIKI_TOPICS_DIR / "outliers" / "outliers.md"
+    out_md = config.WIKI_TOPICS_DIR / "outliers" / "outliers.md"
     assert out_md.exists()
     fence = "---"
     _, fm_text, _body = out_md.read_text(encoding="utf-8").split(fence + "\n", 2)
@@ -807,8 +806,8 @@ def test_cluster_all_writes_wiki_topics(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     clusters.cluster_all()
 
-    assert (clusters.WIKI_TOPICS_DIR / "alpha-cluster" / "alpha-cluster.md").exists()
-    assert (clusters.WIKI_TOPICS_DIR / "gamma-cluster" / "gamma-cluster.md").exists()
+    assert (config.WIKI_TOPICS_DIR / "alpha-cluster" / "alpha-cluster.md").exists()
+    assert (config.WIKI_TOPICS_DIR / "gamma-cluster" / "gamma-cluster.md").exists()
 
     fence = "---"
     fm0 = yaml.safe_load((raw_dir / "vid00.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
@@ -828,7 +827,7 @@ def test_write_wiki_topics_tolerates_missing_raw_file(monkeypatch: pytest.Monkey
     topics = [_topic(0, "demo", count=2)]
     clusters.write_wiki_topics([0, 0], ["vidA", "vidGhost"], topics)
 
-    assert (clusters.WIKI_TOPICS_DIR / "demo" / "demo.md").exists()
+    assert (config.WIKI_TOPICS_DIR / "demo" / "demo.md").exists()
     fence = "---"
     fm = yaml.safe_load((raw_dir / "vidA.md").read_text(encoding="utf-8").split(fence + "\n", 2)[1])
     assert fm["topic"] == "demo"
@@ -863,7 +862,7 @@ def test_write_wiki_creators_writes_pages_from_raw(monkeypatch: pytest.MonkeyPat
     n_created, n_existing = clusters.write_wiki_creators()
     assert (n_created, n_existing) == (1, 0)
 
-    page = clusters.WIKI_CREATORS_DIR / "UC_chan_one.md"
+    page = config.WIKI_CREATORS_DIR / "UC_chan_one.md"
     assert page.exists()
     text = page.read_text(encoding="utf-8")
     fm = yaml.safe_load(text.split("---\n", 2)[1])
@@ -880,7 +879,7 @@ def test_write_wiki_creators_dedups_channels(monkeypatch: pytest.MonkeyPatch, tm
 
     n_created, _ = clusters.write_wiki_creators()
     assert n_created == 1
-    assert list(clusters.WIKI_CREATORS_DIR.glob("*.md")) == [clusters.WIKI_CREATORS_DIR / "UC_dup.md"]
+    assert list(config.WIKI_CREATORS_DIR.glob("*.md")) == [config.WIKI_CREATORS_DIR / "UC_dup.md"]
 
 
 # @lat: [[clusters#Wiki creators#Tests#Existing creator preserved]]
@@ -889,8 +888,8 @@ def test_write_wiki_creators_preserves_existing(monkeypatch: pytest.MonkeyPatch,
     _emb, raw_dir, _cl = _patch_stores(monkeypatch, tmp_path)
     _write_md_with_channels(raw_dir / "vidA.md", "vidA", [_channel("Kept", "UC_keep")])
 
-    clusters.WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
-    existing = clusters.WIKI_CREATORS_DIR / "UC_keep.md"
+    config.WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
+    existing = config.WIKI_CREATORS_DIR / "UC_keep.md"
     original = "---\nname: Kept\nid: UC_keep\nurl: https://example.com\n---\n\nHand-written notes about this creator.\n"
     existing.write_text(original, encoding="utf-8")
 
@@ -914,7 +913,7 @@ def test_write_wiki_creators_skips_malformed_channel(monkeypatch: pytest.MonkeyP
 
     n_created, _ = clusters.write_wiki_creators()
     assert n_created == 1
-    assert (clusters.WIKI_CREATORS_DIR / "UC_ok.md").exists()
+    assert (config.WIKI_CREATORS_DIR / "UC_ok.md").exists()
 
 
 # @lat: [[clusters#Wiki creators#Tests#Cluster all writes creators]]
@@ -939,7 +938,7 @@ def test_cluster_all_writes_wiki_creators(monkeypatch: pytest.MonkeyPatch, tmp_p
     clusters.cluster_all()
 
     for i in range(6):
-        assert (clusters.WIKI_CREATORS_DIR / f"UC_chan_{i}.md").exists()
+        assert (config.WIKI_CREATORS_DIR / f"UC_chan_{i}.md").exists()
 
 
 # @lat: [[clusters#Tests#Real BERTopic smoke]]

@@ -4,52 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Youtubebrain is a fully local web research and report writing assistant. The tool uses local LLM models via Ollama to perform web searches with DuckDuckGo, analyze search results, and automatically generate comprehensive reports on a given topic. The system employs a multi-agent architecture to manage different aspects of the research process.
+YouTubeBrain turns a Google Takeout export of your YouTube watch history into a clustered, LLM-labelled markdown knowledge base ("wiki") that any agent can search via MCP. The pipeline fetches video descriptions (YouTube Data API), captions, and LLM summaries into local caches, compiles one markdown file per watched video, embeds them with a local SentenceTransformer, clusters them with BERTopic, and seeds wiki topic pages that are enriched by an agent in a Docker sandbox.
+
+The run order and per-stage inputs/outputs are documented in `README.md` and `lat.md/overview.md` — read those first; do not guess the workflow.
 
 ## Development Commands
 
 ### Environment Setup
 
 ```bash
-# Install Ollama (required for local models)
-# See https://ollama.com for installation instructions
-
-# Pull the default model
-ollama pull qwen3:8b
-
-# Create environment file from template
-cp .env.example .env
-# (Edit .env to set your TOPIC and any API keys)
-
-# Install dependencies
+# Install dependencies (uv, not pip/poetry)
 uv sync
+
+# Create environment files from templates
+cp .env.example .env        # Python pipeline (YouTube API key, LLM provider, embeddings)
+cp .env.pi.example .env.pi  # Pi wiki sandbox (OpenRouter key, used by compile-wiki.sh)
 ```
 
-### Running the Application
+Local LLM via Ollama is the default provider for summaries and cluster labels (`PROVIDER`/`MODEL` in `.env`); cloud providers (OpenAI, OpenRouter, Together, DeepInfra, LM Studio) are supported too.
 
-```bash
-# Run the research workflow with default settings
-uv run research
+### Running the Pipeline
 
-# Generate UML diagrams
-uv run uml
-```
+The CLI entry points are defined in `[project.scripts]` in `pyproject.toml` and run as `uv run <command>`. See `README.md` for the full ordered workflow, including the shell steps `./compile-wiki.sh` (wiki enrichment) and `./index-wiki.sh` (qmd search index).
 
 ### Testing
 
 ```bash
-# Run all tests
-# Excluding tests marked 'paid'. See `addopts` in pyproject.toml for details.
+# Run all tests (addopts skips: paid, ollama, slow_embedding, slow_clustering)
 uv run pytest
 
 # Run tests with verbose output
 uv run pytest -v
 
 # Run specific test file
-uv run pytest tests/test_utils.py
+uv run pytest tests/test_transcripts.py
 
 # Run specific test
-uv run pytest tests/test_utils.py::test_duckduckgo_search
+uv run pytest tests/test_transcripts.py::test_load_transcripts_missing_db
 
 # Run tests in parallel
 uv run pytest -n auto
@@ -87,37 +78,26 @@ uv run pyright .
 
 # 4. Run tests
 uv run pytest -n auto
+
+# 5. Validate docs (wiki links + code refs)
+lat check
 ```
 
 ## Architecture
 
-Youtubebrain is built around a directed graph workflow where each node represents a step in the research process:
+A linear pipeline of small CLI tools in `src/youtubebrain/`, each reading and writing files under `Markdown/` (gitignored). Key modules:
 
-1. **WebSearch**: Generates search queries and executes web searches using configured search engines
-2. **SummarizeSearchResults**: Takes search results and creates a comprehensive summary
-3. **ReflectOnSearch**: Analyzes the summaries to identify knowledge gaps and decide next steps
-4. **FinalizeSummary**: Compiles all summaries into a final report document
+- **models.py**: Pydantic models for the Takeout watch-history records (`WatchedVideo`, `Subtitle`)
+- **ingest.py**: parses `Takeout/.../watch-history.json` and writes one markdown file per video to `Markdown/raw/`
+- **descriptions.py**: fetches video descriptions via the YouTube Data API v3 with on-disk caching
+- **transcripts.py**: slow, throttled, resumable caption fetcher (youtube-transcript-api with yt-dlp and pytubefix fallbacks) backed by SQLite
+- **summaries.py**: LLM summarizer (pydantic-ai agent) backed by SQLite
+- **embeddings.py**: local SentenceTransformer encoding into `Markdown/embeddings/`
+- **clusters.py**: UMAP + HDBSCAN via BERTopic with LLM-named topics; seeds `Markdown/wiki/`
+- **provider.py**: factory building the pydantic-ai model from `PROVIDER`/`MODEL` env vars
+- **logger.py**: loguru setup writing `youtubebrain.log`
 
-### Key Components
-
-- **Agents**: Specialized LLM agents that handle different parts of the workflow (query generation, summarization, reflection, final report generation)
-- **Models**: Pydantic models defining the data structures for state management (DeepState, WebSearchQuery, WebSearchResult, etc.)
-- **Config**: Central configuration handling environment variables and runtime settings
-- **Graph**: The main workflow implementation using pydantic_graph for managing the research process
-- **Utils**: Helper functions for web search, content fetching, and report generation
-
-### Search Engine Options
-
-Youtubebrain supports multiple search engines:
-- DuckDuckGo (default, no API key required)
-- Tavily (requires API key)
-- Perplexity (requires API key)
-
-### LLM Model Options
-
-The system can use:
-- Local models via Ollama (qwen2.5:14b, qwen3:8b, qwen3:32b)
-- Cloud models (OpenAI's gpt-4o, gpt-4o-mini)
+Architecture details, design decisions, and test specs live in `lat.md/` — use `lat search` / `lat locate` to find sections, and keep `lat.md/` in sync with any code change.
 
 ## MCP Servers
 
@@ -127,14 +107,9 @@ This project uses Model Context Protocol (MCP) servers to extend AI capabilities
 
 **When to use:**
 - Looking up library documentation (e.g., "How do I use pydantic-ai streaming?")
-- Checking API references for dependencies
+- Checking API references for dependencies (httpx, BERTopic, sentence-transformers, ...)
 - Finding code examples from official docs
 - Verifying correct usage of third-party packages
-
-**Examples:**
-- "What's the latest pydantic-ai agent syntax?"
-- "Show me httpx async client examples"
-- "How do I configure pytest-asyncio?"
 
 ### GitHub Repository Server
 
@@ -142,14 +117,7 @@ This project uses Model Context Protocol (MCP) servers to extend AI capabilities
 - Checking open/closed issues in this repository
 - Reviewing pull requests and their status
 - Reading issue comments and discussions
-- Finding related issues or PRs
 - Understanding project history and decisions
-
-**Examples:**
-- "What are the open issues about curiosity?"
-- "Show me recent PRs related to PDF support"
-- "Are there any issues about MLX integration?"
-- "What's the status of issue #13?"
 
 ### Best Practices
 

@@ -56,7 +56,7 @@ The single `encode` call internally iterates over batches of `_BATCH_SIZE = 64`;
 
 ## Env vars
 
-[[src/youtubebrain/embeddings.py#_model_name]] reads `EMBEDDING_MODEL` (default `sentence-transformers/all-MiniLM-L6-v2`) after `load_dotenv()`; it is the only env var this stage consumes.
+[[src/youtubebrain/embeddings.py#_model_name]] reads `EMBEDDING_MODEL` (default `sentence-transformers/all-MiniLM-L6-v2`) after [[src/youtubebrain/config.py#load_env]]; it is the only env var this stage consumes.
 
 `EMBEDDING_BATCH_SIZE` is deliberately not exposed. The hardcoded `_BATCH_SIZE = 64` is the sensible CPU sweet spot for MiniLM-class models on watch histories of 500–10K rows, and adding a knob with no current consumer would only widen the test surface.
 

@@ -7,10 +7,8 @@ import pytest
 import yaml
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
-from youtubebrain import ingest
+from youtubebrain import config, ingest
 from youtubebrain.ingest import (
-    MARKDOWN_RAW_DIR,
-    WATCH_HISTORY_PATH,
     _channel_id,
     _render_markdown,
     _video_id,
@@ -154,7 +152,7 @@ def test_filters_non_watch_entries(tmp_path: Path) -> None:
 # @lat: [[ingest#Tests#Default path constant]]
 def test_default_path_constant() -> None:
     """The default path points at the Takeout watch-history.json location."""
-    assert Path("Takeout/YouTube and YouTube Music/history/watch-history.json") == WATCH_HISTORY_PATH
+    assert Path("Takeout/YouTube and YouTube Music/history/watch-history.json") == config.WATCH_HISTORY_PATH
 
 
 # @lat: [[ingest#Tests#Video ID extraction]]
@@ -325,8 +323,8 @@ def test_main_writes_files(
     }
     history = _write_history(tmp_path, [_VALID_RECORD, record_b])
     out_dir = tmp_path / "out"
-    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
-    monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
+    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(
         ingest,
         "fetch_descriptions",
@@ -350,8 +348,8 @@ def test_main_skips_unresolved(
     """main() does not write a file for unresolved (URL-placeholder) records."""
     history = _write_history(tmp_path, [_VALID_RECORD, _UNRESOLVED_RECORD])
     out_dir = tmp_path / "out"
-    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
-    monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
+    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
@@ -368,8 +366,8 @@ def test_main_skips_non_watch(
     """main() does not write a file for non-watch (community-post) activity."""
     history = _write_history(tmp_path, [_VALID_RECORD, _NON_WATCH_RECORD])
     out_dir = tmp_path / "out"
-    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
-    monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
+    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
     monkeypatch.setattr(ingest, "fetch_descriptions", _stub_fetch_descriptions({"abc123": "d"}))
     monkeypatch.setattr(ingest, "load_transcripts", _stub_load_transcripts_none)
     monkeypatch.setattr(ingest, "load_summaries", _stub_load_summaries_none)
@@ -380,5 +378,5 @@ def test_main_skips_non_watch(
 
 # @lat: [[ingest#Tests#Default output directory]]
 def test_default_output_directory() -> None:
-    """MARKDOWN_RAW_DIR points at the repo-root-relative raw markdown folder."""
-    assert Path("Markdown/raw") == MARKDOWN_RAW_DIR
+    """config.MARKDOWN_RAW_DIR points at the repo-root-relative raw markdown folder."""
+    assert Path("Markdown/raw") == config.MARKDOWN_RAW_DIR

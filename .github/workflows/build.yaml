@@ -11,7 +11,7 @@ jobs:
   ci:
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.12"]
         uv-version: ["latest"]
         # Only run CI on Linux. Windows and macOS cost 2x and 10x more respectively.
         os: [ubuntu-latest]
@@ -24,10 +24,6 @@ jobs:
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4.2.0
-      - name: Create .env file
-        # Define in GitHub repository: Settings -> Secrets and variables -> Actions -> New repository secret
-        run: |
-          echo API_KEY_TAVILY=${{ secrets.API_KEY_TAVILY }} > .env
       - name: Install uv package manager
         uses: astral-sh/setup-uv@v5.2.2
         with:
@@ -50,9 +46,9 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check .
       - name: Run unit tests
-        # -v                verbose
-        # -m "not slow"     skip slow tests
-        run: uv run pytest -v -m "not slow" -n auto
+        # -v verbose; marker filter comes from addopts in pyproject.toml
+        # (skips paid, ollama, slow_embedding, slow_clustering)
+        run: uv run pytest -v -n auto
       - name: Report coverage
         run: uv run coverage report
       - name: Upload logs

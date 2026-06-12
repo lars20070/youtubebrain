@@ -7,16 +7,11 @@ from urllib.parse import parse_qs, urlparse
 import yaml
 from pydantic import HttpUrl, TypeAdapter
 
-from youtubebrain import logger
+from youtubebrain import config, logger
 from youtubebrain.descriptions import fetch_descriptions
 from youtubebrain.models import WatchedVideo
 from youtubebrain.summaries import load_summaries
 from youtubebrain.transcripts import load_transcripts
-
-WATCH_HISTORY_PATH = Path("Takeout/YouTube and YouTube Music/history/watch-history.json")
-
-# @lat: [[ingest#Default output directory]]
-MARKDOWN_RAW_DIR = Path("Markdown/raw")
 
 _adapter = TypeAdapter(list[WatchedVideo])
 
@@ -124,9 +119,9 @@ def load_watch_history(path: Path) -> list[WatchedVideo]:
 
 
 def main() -> None:
-    """Fetch descriptions and write a markdown file for every watched video to MARKDOWN_RAW_DIR."""
+    """Fetch descriptions and write a markdown file for every watched video to config.MARKDOWN_RAW_DIR."""
     logger.info("Starting main function.")
-    videos = load_watch_history(WATCH_HISTORY_PATH)
+    videos = load_watch_history(config.WATCH_HISTORY_PATH)
     ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
     descriptions = asyncio.run(fetch_descriptions(ids))
     transcripts = load_transcripts(ids)
@@ -136,13 +131,13 @@ def main() -> None:
         vid = _video_id(video.title_url) if video.title_url is not None else None
         write_markdown(
             video,
-            MARKDOWN_RAW_DIR,
+            config.MARKDOWN_RAW_DIR,
             descriptions.get(vid) if vid else None,
             transcripts.get(vid) if vid else None,
             summaries.get(vid) if vid else None,
         )
         count += 1
-    logger.info(f"Wrote {count} markdown files to {MARKDOWN_RAW_DIR}.")
+    logger.info(f"Wrote {count} markdown files to {config.MARKDOWN_RAW_DIR}.")
     logger.info("Finished main function.")
 
 

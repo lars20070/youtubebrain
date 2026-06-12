@@ -9,7 +9,7 @@ import pytest
 from pydantic import TypeAdapter
 from youtube_transcript_api._errors import NoTranscriptFound, RequestBlocked
 
-from youtubebrain import ingest
+from youtubebrain import config, ingest
 from youtubebrain.ingest import _render_markdown, main
 from youtubebrain.models import WatchedVideo
 from youtubebrain.transcripts import (
@@ -447,8 +447,8 @@ def test_main_folds_transcripts(
     history = tmp_path / "watch-history.json"
     history.write_text(json.dumps([record]))
     out_dir = tmp_path / "out"
-    monkeypatch.setattr(ingest, "WATCH_HISTORY_PATH", history)
-    monkeypatch.setattr(ingest, "MARKDOWN_RAW_DIR", out_dir)
+    monkeypatch.setattr(config, "WATCH_HISTORY_PATH", history)
+    monkeypatch.setattr(config, "MARKDOWN_RAW_DIR", out_dir)
 
     async def fake_desc(ids: list[str], cache_path: Path | None = None) -> dict[str, str | None]:  # noqa: ARG001
         return dict.fromkeys(ids, "d")

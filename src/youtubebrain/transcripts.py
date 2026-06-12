@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Literal
 
 import requests
-from dotenv import load_dotenv
 from pytubefix import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
@@ -31,9 +30,7 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from youtubebrain import logger
-
-TRANSCRIPTS_DB_PATH = Path("Markdown/.cache/transcripts.sqlite")
+from youtubebrain import config, logger
 
 LANGS: tuple[str, ...] = ("en", "en-US", "en-GB", "a.en")
 
@@ -65,7 +62,7 @@ def _sleep(seconds: float) -> None:
 # @lat: [[transcripts#Pacing configuration]]
 def _inter_video_sleep_window() -> tuple[float, float]:
     """Return (min, max) seconds for inter-video pacing from env or defaults."""
-    load_dotenv()
+    config.load_env()
     raw_min = os.environ.get(_SLEEP_MIN_ENV, str(_DEFAULT_SLEEP_MIN))
     raw_max = os.environ.get(_SLEEP_MAX_ENV, str(_DEFAULT_SLEEP_MAX))
     try:
@@ -345,8 +342,9 @@ def resolve_transcript(
 
 
 # @lat: [[transcripts#SQLite schema]]
-def init_db(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
+def init_db(db_path: Path | None = None) -> None:
     """Create the transcripts table and indexes if missing; enable WAL."""
+    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path)
     try:
@@ -375,8 +373,9 @@ def init_db(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
 
 
 # @lat: [[transcripts#Enqueue]]
-def enqueue(video_ids: list[str], db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
+def enqueue(video_ids: list[str], db_path: Path | None = None) -> None:
     """Insert video IDs as pending rows; existing primary keys are left unchanged."""
+    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
     init_db(db_path)
     con = sqlite3.connect(db_path)
     try:
@@ -390,8 +389,9 @@ def enqueue(video_ids: list[str], db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
 
 
 # @lat: [[transcripts#Read API]]
-def load_transcripts(video_ids: list[str], db_path: Path = TRANSCRIPTS_DB_PATH) -> dict[str, str | None]:
+def load_transcripts(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:
     """Return plain transcript text for each id; None when missing or status is not ok."""
+    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
     unique = list(dict.fromkeys(video_ids))
     if not unique:
         return {}
@@ -416,8 +416,9 @@ def load_transcripts(video_ids: list[str], db_path: Path = TRANSCRIPTS_DB_PATH) 
 
 
 # @lat: [[transcripts#Fetch loop]]
-def fetch_transcripts(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
+def fetch_transcripts(db_path: Path | None = None) -> None:
     """Process pending/blocked/error rows with pacing until none remain or consecutive blocks abort."""
+    db_path = config.TRANSCRIPTS_DB_PATH if db_path is None else db_path
     init_db(db_path)
     sleep_min, sleep_max = _inter_video_sleep_window()
     yta_state = _YtaSessionState()
@@ -497,10 +498,10 @@ def fetch_transcripts(db_path: Path = TRANSCRIPTS_DB_PATH) -> None:
 # @lat: [[transcripts#CLI entry]]
 def main() -> None:
     """Load Takeout IDs, enqueue pending rows, then run the resumable fetch loop."""
-    from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
+    from youtubebrain.ingest import _video_id, load_watch_history  # noqa: PLC0415
 
     logger.info("Starting transcripts fetcher.")
-    videos = load_watch_history(WATCH_HISTORY_PATH)
+    videos = load_watch_history(config.WATCH_HISTORY_PATH)
     ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
     init_db()
     enqueue(ids)

@@ -16,7 +16,7 @@ The string value matches the `PROVIDER` env var. Unknown values raise `ValueErro
 
 ## Model factory
 
-[[src/youtubebrain/provider.py#create_model]] reads `PROVIDER` and `MODEL` after `load_dotenv()`, then dispatches via `match`.
+[[src/youtubebrain/provider.py#create_model]] reads `PROVIDER` and `MODEL` after [[src/youtubebrain/config.py#load_env]], then dispatches via `match`.
 
 Per-provider wiring:
 

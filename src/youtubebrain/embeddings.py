@@ -6,25 +6,18 @@ import json
 import os
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 import yaml
-from dotenv import load_dotenv
 
-from youtubebrain import logger
+from youtubebrain import config, logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
     from numpy.typing import NDArray
-
-EMBEDDINGS_DIR = Path("Markdown/embeddings")
-EMBEDDINGS_NPY_PATH = EMBEDDINGS_DIR / "embeddings.npy"
-IDS_JSON_PATH = EMBEDDINGS_DIR / "ids.json"
-META_JSON_PATH = EMBEDDINGS_DIR / "meta.json"
-MARKDOWN_RAW_DIR = Path("Markdown/raw")
 
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _MODEL_ENV = "EMBEDDING_MODEL"
@@ -60,7 +53,7 @@ def _build_encoder(model_name: str) -> _EncoderProto:
 # @lat: [[embeddings#Env vars]]
 def _model_name() -> str:
     """Resolve the SentenceTransformer model id from EMBEDDING_MODEL env (default all-MiniLM-L6-v2)."""
-    load_dotenv()
+    config.load_env()
     return os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
 
 
@@ -134,8 +127,9 @@ def compose_text(title: str, summary: str | None, description: str | None) -> st
     return None
 
 
-def iter_raw_files(raw_dir: Path = MARKDOWN_RAW_DIR) -> Iterator[Path]:
+def iter_raw_files(raw_dir: Path | None = None) -> Iterator[Path]:
     """Yield every `<video_id>.md` file under raw_dir in deterministic order."""
+    raw_dir = config.MARKDOWN_RAW_DIR if raw_dir is None else raw_dir
     if not raw_dir.exists():
         return
     yield from sorted(raw_dir.glob("*.md"))
@@ -147,12 +141,12 @@ def load_existing() -> tuple[NDArray[np.float32], list[str], dict[str, object]]:
     empty_arr = np.zeros((0, 0), dtype=np.float32)
     ids: list[str] = []
     meta: dict[str, object] = {}
-    if IDS_JSON_PATH.exists():
-        ids = json.loads(IDS_JSON_PATH.read_text(encoding="utf-8"))
-    if META_JSON_PATH.exists():
-        meta = json.loads(META_JSON_PATH.read_text(encoding="utf-8"))
-    if EMBEDDINGS_NPY_PATH.exists():
-        arr = np.load(EMBEDDINGS_NPY_PATH).astype(np.float32, copy=False)
+    if config.EMBEDDINGS_IDS_JSON_PATH.exists():
+        ids = json.loads(config.EMBEDDINGS_IDS_JSON_PATH.read_text(encoding="utf-8"))
+    if config.EMBEDDINGS_META_JSON_PATH.exists():
+        meta = json.loads(config.EMBEDDINGS_META_JSON_PATH.read_text(encoding="utf-8"))
+    if config.EMBEDDINGS_NPY_PATH.exists():
+        arr = np.load(config.EMBEDDINGS_NPY_PATH).astype(np.float32, copy=False)
     else:
         arr = empty_arr
     if len(ids) != arr.shape[0]:
@@ -168,24 +162,25 @@ def save_atomic(arr: NDArray[np.float32], ids: list[str], meta: dict[str, object
     """Write ids → meta → embeddings.npy atomically via `*.tmp` + `os.replace`."""
     if arr.shape[0] != len(ids):
         raise ValueError(f"refusing to save: arr rows={arr.shape[0]} != ids={len(ids)}")
-    EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    config.EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    ids_tmp = IDS_JSON_PATH.with_suffix(IDS_JSON_PATH.suffix + ".tmp")
-    meta_tmp = META_JSON_PATH.with_suffix(META_JSON_PATH.suffix + ".tmp")
+    ids_tmp = config.EMBEDDINGS_IDS_JSON_PATH.with_suffix(config.EMBEDDINGS_IDS_JSON_PATH.suffix + ".tmp")
+    meta_tmp = config.EMBEDDINGS_META_JSON_PATH.with_suffix(config.EMBEDDINGS_META_JSON_PATH.suffix + ".tmp")
     # np.save auto-appends ".npy" if absent, so keep the suffix on the tmp path.
-    npy_tmp = EMBEDDINGS_NPY_PATH.with_name(EMBEDDINGS_NPY_PATH.stem + ".tmp.npy")
+    npy_tmp = config.EMBEDDINGS_NPY_PATH.with_name(config.EMBEDDINGS_NPY_PATH.stem + ".tmp.npy")
 
     ids_tmp.write_text(json.dumps(ids), encoding="utf-8")
-    os.replace(ids_tmp, IDS_JSON_PATH)
+    os.replace(ids_tmp, config.EMBEDDINGS_IDS_JSON_PATH)
     meta_tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    os.replace(meta_tmp, META_JSON_PATH)
+    os.replace(meta_tmp, config.EMBEDDINGS_META_JSON_PATH)
     np.save(npy_tmp, arr, allow_pickle=False)
-    os.replace(npy_tmp, EMBEDDINGS_NPY_PATH)
+    os.replace(npy_tmp, config.EMBEDDINGS_NPY_PATH)
 
 
 # @lat: [[embeddings#Embed loop]]
-def embed_pending(raw_dir: Path = MARKDOWN_RAW_DIR) -> int:
+def embed_pending(raw_dir: Path | None = None) -> int:
     """Encode every raw markdown file not already in `ids.json`; return count newly embedded."""
+    raw_dir = config.MARKDOWN_RAW_DIR if raw_dir is None else raw_dir
     existing_arr, existing_ids, _existing_meta = load_existing()
     existing_set = set(existing_ids)
 

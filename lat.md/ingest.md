@@ -112,7 +112,7 @@ Writes are idempotent: a second call overwrites the file in place, so re-running
 
 ## Default output directory
 
-[[src/youtubebrain/ingest.py#MARKDOWN_RAW_DIR]] is the repo-root-relative `Markdown/raw` folder.
+[[src/youtubebrain/config.py#MARKDOWN_RAW_DIR]] is the repo-root-relative `Markdown/raw` folder, defined centrally in [[config]].
 
 `write_markdown` creates the directory (and any missing parents) on first call via `mkdir(parents=True, exist_ok=True)`, so a fresh checkout works without manual setup. The folder is checked in with a `.gitkeep` placeholder.
 
@@ -146,7 +146,7 @@ Unknown JSON keys raise ValidationError to surface schema drift, per `extra="for
 
 ### Default path constant
 
-`WATCH_HISTORY_PATH` equals the repo-root-relative Takeout export path.
+`config.WATCH_HISTORY_PATH` equals the repo-root-relative Takeout export path.
 
 ### Video ID extraction
 
@@ -218,4 +218,4 @@ Calling `main()` against a monkeypatched watch-history.json and output directory
 
 ### Default output directory
 
-`MARKDOWN_RAW_DIR` equals the repo-root-relative `Markdown/raw` folder.
+`config.MARKDOWN_RAW_DIR` equals the repo-root-relative `Markdown/raw` folder.

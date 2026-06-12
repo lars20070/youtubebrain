@@ -7,11 +7,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
 
-from youtubebrain import logger
+from youtubebrain import config, logger
 
-DESCRIPTIONS_CACHE_PATH = Path("Markdown/.cache/descriptions.json")
 YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos"
 _BATCH_SIZE = 50
 _API_KEY_ENV = "API_KEY_YOUTUBE"
@@ -49,7 +47,7 @@ def _save_cache(path: Path, cache: dict[str, str | None]) -> None:
 # @lat: [[descriptions#API key requirement]]
 def _get_api_key() -> str:
     """Read the YouTube Data API key from the environment, loading .env on the way."""
-    load_dotenv()
+    config.load_env()
     key = os.environ.get(_API_KEY_ENV)
     if not key:
         raise RuntimeError(
@@ -81,9 +79,10 @@ async def _fetch_batch(client: httpx.AsyncClient, ids: list[str], api_key: str) 
 # @lat: [[descriptions#API client]]
 async def fetch_descriptions(
     video_ids: list[str],
-    cache_path: Path = DESCRIPTIONS_CACHE_PATH,
+    cache_path: Path | None = None,
 ) -> dict[str, str | None]:
     """Return {video_id: description_or_None} for every input ID, using the cache to skip prior fetches."""
+    cache_path = config.DESCRIPTIONS_CACHE_PATH if cache_path is None else cache_path
     cache = await asyncio.to_thread(_load_cache, cache_path)
     unique_ids = list(dict.fromkeys(video_ids))
     missing = [vid for vid in unique_ids if vid not in cache]

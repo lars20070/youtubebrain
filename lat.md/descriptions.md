@@ -18,7 +18,7 @@ The API endpoint is `https://www.googleapis.com/youtube/v3/videos` with `part=sn
 
 A JSON object keyed by video ID with description (or `null`) as the value, persisted at `Markdown/.cache/descriptions.json`.
 
-[[src/youtubebrain/descriptions.py#DESCRIPTIONS_CACHE_PATH]] points at the file. [[src/youtubebrain/descriptions.py#_load_cache]] returns an empty dict when it is missing; [[src/youtubebrain/descriptions.py#_save_cache]] pretty-prints with sorted keys for diff-friendliness and creates the parent directory on demand.
+[[src/youtubebrain/config.py#DESCRIPTIONS_CACHE_PATH]] points at the file. [[src/youtubebrain/descriptions.py#_load_cache]] returns an empty dict when it is missing; [[src/youtubebrain/descriptions.py#_save_cache]] pretty-prints with sorted keys for diff-friendliness and creates the parent directory on demand.
 
 Both reads and writes use explicit UTF-8 encoding so emoji and non-Latin titles round-trip cleanly. Writes are atomic: the payload is serialized with `ensure_ascii=False`, written to a `.tmp` sibling, fsynced, and `os.replace`d into place, so an interrupted run cannot leave a half-written cache. The folder is gitignored.
 
@@ -44,7 +44,7 @@ This is distinct from [[descriptions#Missing videos]]: a cached `null` means "AP
 
 ## API key requirement
 
-[[src/youtubebrain/descriptions.py#_get_api_key]] reads `API_KEY_YOUTUBE` from the environment after `load_dotenv()`, raising `RuntimeError` if unset.
+[[src/youtubebrain/descriptions.py#_get_api_key]] reads `API_KEY_YOUTUBE` from the environment after [[src/youtubebrain/config.py#load_env]], raising `RuntimeError` if unset.
 
 The error message points at the Google Cloud Console and the `.env` file. The check happens only when at least one ID is uncached, so a fully cached re-run does not require a key in scope.
 
@@ -52,7 +52,7 @@ The error message points at the Google Cloud Console and the `.env` file. The ch
 
 Behaviour is verified by `tests/test_descriptions.py` using `respx` to mock the YouTube API endpoint and `tmp_path` for the cache file. The autouse `_set_api_key` fixture sets `API_KEY_YOUTUBE=test-key` so each test starts from a known environment.
 
-The suite-wide autouse `_block_dotenv` fixture in `tests/conftest.py` additionally stops `load_dotenv` from reading the developer's on-disk `.env`, so a test that needs a variable absent still `delenv`s it without the file silently re-populating it.
+The suite-wide autouse `_block_dotenv` fixture in `tests/conftest.py` additionally patches `load_dotenv` inside [[config]] (the package's single dotenv call site), so a test that needs a variable absent still `delenv`s it without the on-disk `.env` silently re-populating it.
 
 ### Uses cache first
 
