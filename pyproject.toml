@@ -21,7 +21,7 @@ dependencies = [
   "sentence-transformers>=3.0,<4",
   "umap-learn>=0.5",
   "youtube-transcript-api>=1.2.4",
-  "yt-dlp>=2026.1",
+  "yt-dlp>=2026.6.9",
 ]
 
 [dependency-groups]
