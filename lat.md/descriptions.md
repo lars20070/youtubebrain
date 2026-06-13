@@ -4,86 +4,93 @@ lat:
 ---
 # Descriptions
 
-Fetches YouTube video descriptions via the YouTube Data API v3 and caches them on disk so re-runs do not re-fetch.
+Fetches YouTube descriptions into a resumable SQLite cache so markdown compilation can read them offline without API calls.
 
-Google Takeout exports do not contain video descriptions, only titles and channel references. [[src/youtubebrain/descriptions.py#fetch_descriptions]] takes a list of video IDs (extracted from Takeout titleUrls by [[ingest#Video ID extraction]]) and returns a `{video_id: description_or_None}` mapping that [[ingest#Markdown writer]] folds into each markdown file under a `## Description` heading.
+Google Takeout exports include title and channel metadata but not long-form video descriptions, so this stage fills that gap via the YouTube Data API.
+
+## CLI entry
+
+[[src/youtubebrain/descriptions.py#main]] is the `uv run descriptions` entrypoint.
+
+It loads ids from [[takeout#Video IDs]], enqueues rows, then runs the fetch loop.
+
+## SQLite schema
+
+[[src/youtubebrain/descriptions.py#init_db]] creates a `descriptions` status-row table through [[cache#Schema initialization]].
+
+Rows use statuses `pending`, `ok`, `missing`, and `error`; `missing` is API-confirmed absent and terminal, while `error` is retryable until attempt cap.
+
+## Enqueue
+
+[[src/youtubebrain/descriptions.py#enqueue]] delegates to [[cache#Enqueue]] and inserts pending rows for new ids only.
+
+Repeated runs are resumable because existing primary keys are not overwritten.
+
+## Read API
+
+[[src/youtubebrain/descriptions.py#load_descriptions]] wraps [[src/youtubebrain/cache.py#StatusCache#load_ok]] and returns `{video_id: text_or_none}`.
+
+Missing databases and non-ok rows map to `None`, which markdown renders as `_(unavailable)_` in the Description section.
+
+## Fetch loop
+
+[[src/youtubebrain/descriptions.py#fetch_descriptions]] selects retryable ids via [[src/youtubebrain/cache.py#StatusCache#pending_ids]], batches in groups of 50, and writes outcomes with [[src/youtubebrain/cache.py#StatusCache#record_result]] / [[src/youtubebrain/cache.py#StatusCache#record_attempt]].
+
+The API key is only read when there are pending/error rows, so fully settled caches can be read without credentials.
 
 ## API client
 
-[[src/youtubebrain/descriptions.py#fetch_descriptions]] is the only public entry point. It deduplicates the input IDs, splits the cache misses into batches of 50 (the API maximum), and calls [[src/youtubebrain/descriptions.py#_fetch_batch]] for each batch via an `httpx.AsyncClient` with a 30-second timeout.
+[[src/youtubebrain/descriptions.py#_fetch_batch]] uses a synchronous `httpx.Client` against `https://www.googleapis.com/youtube/v3/videos` with `part=snippet` and up to 50 ids per request.
 
-The API endpoint is `https://www.googleapis.com/youtube/v3/videos` with `part=snippet&id=<csv>&key=<API_KEY_YOUTUBE>`. Cost is 1 quota unit per call, so a 10 K-video history burns ~200 of the free 10 K daily units. Items whose ID does not appear in the response are deleted, private, or region-blocked; they are still recorded in the cache as `null` so they are not re-fetched on subsequent runs.
-
-## Cache
-
-A JSON object keyed by video ID with description (or `null`) as the value, persisted at `Markdown/.cache/descriptions.json`.
-
-[[src/youtubebrain/descriptions.py#DESCRIPTIONS_CACHE_PATH]] points at the file. [[src/youtubebrain/descriptions.py#_load_cache]] returns an empty dict when it is missing; [[src/youtubebrain/descriptions.py#_save_cache]] pretty-prints with sorted keys for diff-friendliness and creates the parent directory on demand.
-
-Both reads and writes use explicit UTF-8 encoding so emoji and non-Latin titles round-trip cleanly. Writes are atomic: the payload is serialized with `ensure_ascii=False`, written to a `.tmp` sibling, fsynced, and `os.replace`d into place, so an interrupted run cannot leave a half-written cache. The folder is gitignored.
-
-The cache is written after every batch, so a partial run that fails on batch N still preserves batches 1 through N-1 — restarting the pipeline picks up from where it stopped.
-
-Because [[src/youtubebrain/descriptions.py#fetch_descriptions]] is async, both the initial cache load and the per-batch writes are dispatched through `asyncio.to_thread` so the `fsync`/`os.replace` work runs on a worker thread instead of blocking the event loop.
+It returns only ids present in the API response, with empty-string descriptions preserved as valid `ok` values.
 
 ## Missing videos
 
-Videos the API cannot return are cached as `null` and surfaced to the caller as `None`.
+IDs omitted from a successful API response are marked `missing` by [[src/youtubebrain/descriptions.py#fetch_descriptions]].
 
-Causes: deleted, private, age-restricted, region-blocked, or terminated-channel videos. The downstream markdown renderer maps `None` to the `_(unavailable)_` placeholder under the Description heading so the file is still written with the Takeout metadata that survived.
-
-A yt-dlp fallback for these videos is intentionally deferred — for a 10 K-video personal archive the API alone covers 85–95 % of records, and yt-dlp adds bot-detection risk and a heavyweight dependency for marginal gain.
+This captures deleted/private/region-blocked videos as terminal `None` values rather than retrying forever.
 
 ## API failures
 
-HTTP errors (4xx/5xx) and network failures (timeouts, connect errors) from `_fetch_batch` are caught per batch in [[src/youtubebrain/descriptions.py#fetch_descriptions]] and logged at warning level. The failed batch's IDs are **not** written to the cache, so a subsequent run retries them.
+Per-batch `httpx.HTTPError` failures are recorded as `error` attempts and processing continues with later batches.
 
-The caller still receives a complete `{video_id: description_or_None}` mapping — IDs from failed batches surface as `None` because `cache.get(vid)` returns `None` when the key is absent. Downstream [[ingest#Markdown writer]] therefore writes `_(unavailable)_` rather than crashing the run.
-
-This is distinct from [[descriptions#Missing videos]]: a cached `null` means "API confirmed the video does not exist" and is never retried; an absent cache entry after a failed call means "we could not ask the API this run" and will retry next time.
+Rows in `error` status remain retryable while attempts stay below the cap.
 
 ## API key requirement
 
-[[src/youtubebrain/descriptions.py#_get_api_key]] reads `API_KEY_YOUTUBE` from the environment after `load_dotenv()`, raising `RuntimeError` if unset.
+[[src/youtubebrain/descriptions.py#_get_api_key]] reads `API_KEY_YOUTUBE` after [[src/youtubebrain/config.py#load_env]] and raises a clear `RuntimeError` when missing.
 
-The error message points at the Google Cloud Console and the `.env` file. The check happens only when at least one ID is uncached, so a fully cached re-run does not require a key in scope.
+The error text points to Google Cloud setup and `.env` configuration.
 
 ## Tests
 
-Behaviour is verified by `tests/test_descriptions.py` using `respx` to mock the YouTube API endpoint and `tmp_path` for the cache file. The autouse `_set_api_key` fixture sets `API_KEY_YOUTUBE=test-key` so each test starts from a known environment.
+Coverage in `tests/test_descriptions.py` verifies read API behavior, batching, retry semantics, and CLI wiring.
 
-The suite-wide autouse `_block_dotenv` fixture in `tests/conftest.py` additionally stops `load_dotenv` from reading the developer's on-disk `.env`, so a test that needs a variable absent still `delenv`s it without the file silently re-populating it.
+### Read API missing db
 
-### Uses cache first
+`load_descriptions` returns a complete id-to-`None` map when the SQLite file is absent.
 
-A pre-seeded cache file means no HTTP request is issued for that video ID; the respx route is asserted not-called.
+### Read API ok only
+
+`load_descriptions` returns text only for `ok` rows and maps non-ok rows to `None`.
 
 ### Batches in fifties
 
-75 uncached IDs trigger exactly two GET calls against the YouTube videos endpoint, confirming the 50-per-batch chunking.
+75 queued ids produce exactly two API calls, confirming 50-id batch chunking.
 
-### Stores None for missing
+### Missing rows become missing status
 
-When the API returns only a subset of the requested IDs, the missing ones are written to the cache as `null` and returned to the caller as `None`.
+Ids absent from the API response are persisted as `missing` and read back as `None`.
 
-### Persists cache per batch
+### Persists per batch
 
-If a later batch errors, the cache file still contains every ID from earlier successful batches — the fetcher writes after each batch, so restarts resume rather than re-fetch.
+If a later batch fails, earlier successful rows remain committed while failed rows become `error`.
 
-The failed batch's IDs are returned as `None` to the caller and stay absent from the cache.
+### Error rows retryable
 
-### Handles API failure
+Rows marked `error` are retried on later runs and can transition to `ok` with incremented attempts.
 
-A single-batch HTTP 500 response returns `None` for every requested ID, writes nothing to the cache, and does not raise — the caller can keep going.
+### API key only when pending
 
-### Handles network error
+Missing `API_KEY_YOUTUBE` raises only when pending/error rows exist; settled caches skip key lookup.
 
-A `httpx.ConnectError` from the API call returns `None` for every requested ID, writes nothing to the cache, and does not raise.
-
-### Raises without API key
-
-`fetch_descriptions` raises `RuntimeError` mentioning `API_KEY_YOUTUBE` when the environment variable is unset and `.env` does not supply it.
-
-### Deduplicates input ids
-
-Duplicate IDs in the input list collapse to a single API fetch and a single result key, so a watch history with rewatches does not cost extra quota.

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from youtubebrain import config
 from youtubebrain import embeddings as emb
 
 if TYPE_CHECKING:
@@ -74,59 +75,13 @@ class _StubEncoder:
 
 
 def _patch_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Point the module's persistence constants at tmp_path; return the embeddings dir."""
+    """Point the config persistence constants at tmp_path; return the embeddings dir."""
     out_dir = tmp_path / "embeddings"
-    monkeypatch.setattr(emb, "EMBEDDINGS_DIR", out_dir)
-    monkeypatch.setattr(emb, "EMBEDDINGS_NPY_PATH", out_dir / "embeddings.npy")
-    monkeypatch.setattr(emb, "IDS_JSON_PATH", out_dir / "ids.json")
-    monkeypatch.setattr(emb, "META_JSON_PATH", out_dir / "meta.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_DIR", out_dir)
+    monkeypatch.setattr(config, "EMBEDDINGS_NPY_PATH", out_dir / "embeddings.npy")
+    monkeypatch.setattr(config, "EMBEDDINGS_IDS_JSON_PATH", out_dir / "ids.json")
+    monkeypatch.setattr(config, "EMBEDDINGS_META_JSON_PATH", out_dir / "meta.json")
     return out_dir
-
-
-# @lat: [[embeddings#Tests#Frontmatter parsing]]
-def test_parse_raw_markdown_extracts_fields(tmp_path: Path) -> None:
-    """parse_raw_markdown returns id, title, and section bodies from a typical raw file."""
-    path = _write_md(
-        tmp_path / "vid.md",
-        id="vid1",
-        title="Why doormen matter",
-        summary="A short summary body.",
-        description="Promo description body.",
-    )
-    vid, title, summary, description = emb.parse_raw_markdown(path)
-    assert vid == "vid1"
-    assert title == "Why doormen matter"
-    assert summary == "A short summary body."
-    assert description == "Promo description body."
-
-
-# @lat: [[embeddings#Tests#Unavailable placeholder recognized as missing]]
-def test_unavailable_placeholder_treated_as_missing(tmp_path: Path) -> None:
-    """Section bodies equal to `_(unavailable)_` parse to None, not text."""
-    path = _write_md(tmp_path / "vid.md", id="vid1", title="T", summary="_(unavailable)_", description="real desc")
-    _vid, _title, summary, description = emb.parse_raw_markdown(path)
-    assert summary is None
-    assert description == "real desc"
-
-
-# @lat: [[embeddings#Tests#Compose prefers summary]]
-def test_compose_prefers_summary() -> None:
-    """When both summary and description are present, summary is used."""
-    text = emb.compose_text("Title", "summary body", "description body")
-    assert text == "Title\n\nsummary body"
-
-
-# @lat: [[embeddings#Tests#Compose falls back to description]]
-def test_compose_falls_back_to_description() -> None:
-    """Missing summary falls back to description."""
-    text = emb.compose_text("Title", None, "description body")
-    assert text == "Title\n\ndescription body"
-
-
-# @lat: [[embeddings#Tests#Compose skipped when both missing]]
-def test_compose_returns_none_when_both_missing() -> None:
-    """Both fields missing returns None (caller should skip)."""
-    assert emb.compose_text("Title", None, None) is None
 
 
 # @lat: [[embeddings#Tests#ids.json round-trip]]

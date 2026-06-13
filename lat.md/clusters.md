@@ -62,7 +62,7 @@ The floor dominates until the corpus clears `(floor * granularity)² = 1600` vid
 
 ## Representative-doc plumbing
 
-[[src/youtubebrain/clusters.py#_load_texts_by_id]] walks `Markdown/raw/` once and reuses [[src/youtubebrain/embeddings.py#parse_raw_markdown]] + [[src/youtubebrain/embeddings.py#compose_text]] to recover the title+summary text that was originally embedded, row-aligned to `ids.json`.
+[[src/youtubebrain/clusters.py#_load_texts_by_id]] walks `Markdown/raw/` once and reuses [[src/youtubebrain/markdown.py#parse_raw_markdown]] + [[src/youtubebrain/markdown.py#compose_text]] to recover the title+summary text that was originally embedded, row-aligned to `ids.json`.
 
 [[src/youtubebrain/clusters.py#_extract_cluster_payloads]] then asks the fitted model for `get_representative_docs(cluster_id)` (text strings) and maps each one back to a video id via an inverse `text → id` dict built before the fit. Outliers (`-1`) receive an empty rep-id list and are skipped during labelling. Missing raw files do not abort the run — the affected cluster simply falls back to keywords-only LLM prompts (see [[clusters#LLM labeller]]).
 
@@ -100,15 +100,15 @@ The non-outlier `TopicInfo.label` is sanitised before being used as a filesystem
 
 [[src/youtubebrain/clusters.py#_render_topic_page]] writes one minimal markdown page per cluster under `Markdown/wiki/topics/<slug>/<slug>.md`.
 
-The page is: YAML frontmatter `{label, cluster_id, count, keywords, representative_ids}` (same `sort_keys=False, allow_unicode=True, default_flow_style=False` style as [[ingest#Markdown writer]]), an H1 of the slug, the LLM description as a paragraph, then a `## Videos` list of `- <title> ([<id>](../../../raw/<id>.md))` lines.
+The page is: YAML frontmatter `{label, cluster_id, count, keywords, representative_ids}` (same `sort_keys=False, allow_unicode=True, default_flow_style=False` style as [[markdown#Markdown writer]]), an H1 of the slug, the LLM description as a paragraph, then a `## Videos` list of `- <title> ([<id>](../../../raw/<id>.md))` lines.
 
-Member titles come from [[src/youtubebrain/clusters.py#_load_titles_by_id]], which reuses [[src/youtubebrain/embeddings.py#parse_raw_markdown]] for one pass over `Markdown/raw/`; ids without a raw file are listed by id only.
+Member titles come from [[src/youtubebrain/clusters.py#_load_titles_by_id]], which reuses [[src/youtubebrain/markdown.py#parse_raw_markdown]] for one pass over `Markdown/raw/`; ids without a raw file are listed by id only.
 
 ### Raw frontmatter contract
 
 [[src/youtubebrain/clusters.py#_inject_topic_into_raw]] sets `topic` and `cluster_id` in every `Markdown/raw/<id>.md` frontmatter, exactly once each, idempotently.
 
-It reads the frontmatter dict via [[src/youtubebrain/embeddings.py#read_frontmatter]] (which collapses any pre-existing duplicates), overwrites the two keys, and re-dumps with `sort_keys=False` so original key order is preserved. The body after the second `---` fence is written back verbatim. The write is atomic via `*.tmp` + `os.replace`, so a crash leaves either the previous or the new file intact. Re-running with the same `(slug, cluster_id)` is a byte-identical no-op.
+It reads the frontmatter dict via [[src/youtubebrain/markdown.py#read_frontmatter]] (which collapses any pre-existing duplicates), overwrites the two keys, and re-dumps with `sort_keys=False` so original key order is preserved. The body after the second `---` fence is written back verbatim. The write is atomic via `*.tmp` + `os.replace`, so a crash leaves either the previous or the new file intact. Re-running with the same `(slug, cluster_id)` is a byte-identical no-op.
 
 Malformed-frontmatter raw files raise `ValueError`. The covered cases are missing or unclosed fences, yaml parse errors, and non-mapping top-level YAML (e.g. a scalar `0`, `False`, or a list) — only an entirely empty frontmatter is treated as `{}`, so a falsy non-mapping value is never silently coerced away. [[src/youtubebrain/clusters.py#write_wiki_topics]] catches these per-file and logs a warning, so one bad raw file does not abort the whole injection pass.
 
@@ -122,7 +122,7 @@ Manually edited topic pages will be lost — by design, this layer is fully owne
 
 After the wiki-topics step, [[src/youtubebrain/clusters.py#write_wiki_creators]] materialises one stub markdown page per distinct YouTube channel under `Markdown/wiki/creators/<channel_id>.md`, so creators become first-class wiki pages whose bodies are filled in by hand later.
 
-[[src/youtubebrain/clusters.py#_iter_channels_from_raw]] walks `Markdown/raw/` once, reads each raw frontmatter via [[src/youtubebrain/embeddings.py#read_frontmatter]], and extracts the `channels` list (`name`, `id`, `url`) — the same list [[ingest#Markdown writer]] originally wrote. Channels are deduped by `id` (first occurrence wins); entries with a non-string field, an empty id, or an id containing `/`, `\`, or `..` are logged and skipped for filesystem safety, and a malformed raw frontmatter is skipped without aborting the walk.
+[[src/youtubebrain/clusters.py#_iter_channels_from_raw]] walks `Markdown/raw/` once, reads each raw frontmatter via [[src/youtubebrain/markdown.py#read_frontmatter]], and extracts the `channels` list (`name`, `id`, `url`) — the same list [[markdown#Markdown writer]] originally wrote. Channels are deduped by `id` (first occurrence wins); entries with a non-string field, an empty id, or an id containing `/`, `\`, or `..` are logged and skipped for filesystem safety, and a malformed raw frontmatter is skipped without aborting the walk.
 
 Each created page is YAML frontmatter `{name, id, url}` (same `sort_keys=False, allow_unicode=True, default_flow_style=False` style as [[clusters#Wiki topics#Page rendering]]) followed by an empty body. Unlike the wiki-topics layer's [[clusters#Wiki topics#Wipe-and-rewrite policy]], this step is **preserve-existing**: it only creates files for channels that have no page yet and never overwrites, so hand-added body content survives every re-run. The function returns `(n_created, n_existing)` and runs inline at the end of [[src/youtubebrain/clusters.py#cluster_all]]; it depends only on the raw files, not on the cluster assignments.
 

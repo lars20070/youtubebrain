@@ -3,25 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
-from youtubebrain import logger
-from youtubebrain.descriptions import DESCRIPTIONS_CACHE_PATH
+from youtubebrain import config, logger, takeout
+from youtubebrain.cache import StatusCache
+from youtubebrain.descriptions import load_descriptions
 from youtubebrain.provider import create_model
-from youtubebrain.transcripts import TRANSCRIPTS_DB_PATH, load_transcripts
+from youtubebrain.transcripts import load_transcripts
 
-SUMMARIES_DB_PATH = Path("Markdown/.cache/summaries.sqlite")
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _TRANSCRIPT_CHAR_LIMIT = 12000
 _DEFAULT_MODEL = "qwen3:32b"
 _MAX_ATTEMPTS = 5
 
 _MODEL_ENV = "MODEL"
+_SUMMARIES_EXTRA_COLUMNS = ("model TEXT",)
 
 # @lat: [[summaries#System prompt]]
 SYSTEM_PROMPT = """\
@@ -32,13 +33,6 @@ and sponsor read-outs inside transcripts. Focus on the substantive content of th
 
 Keep the summary focused and readable (roughly two to four short paragraphs).\
 """
-
-
-def _load_descriptions_cache(path: Path = DESCRIPTIONS_CACHE_PATH) -> dict[str, str | None]:
-    """Read the descriptions JSON cache; return an empty dict if absent."""
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # @lat: [[summaries#Transcript truncation]]
@@ -91,110 +85,50 @@ async def summarize_one(
 
 
 # @lat: [[summaries#SQLite schema]]
-def init_db(db_path: Path = SUMMARIES_DB_PATH) -> None:
+def init_db(db_path: Path | None = None) -> None:
     """Create the summaries table and indexes if missing; enable WAL."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(db_path)
-    try:
-        con.execute("PRAGMA journal_mode=WAL")
-        con.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS summaries (
-                video_id      TEXT PRIMARY KEY,
-                status        TEXT NOT NULL,
-                text          TEXT,
-                model         TEXT,
-                error_message TEXT,
-                attempts      INTEGER NOT NULL DEFAULT 0,
-                fetched_at    TIMESTAMP,
-                last_attempt  TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_summaries_status ON summaries(status);
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
+    _cache(db_path).init_db()
 
 
 # @lat: [[summaries#Enqueue]]
-def enqueue(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> None:
+def enqueue(video_ids: list[str], db_path: Path | None = None) -> None:
     """Insert video IDs as pending rows; existing primary keys are left unchanged."""
-    init_db(db_path)
-    con = sqlite3.connect(db_path)
-    try:
-        con.executemany(
-            "INSERT OR IGNORE INTO summaries (video_id, status) VALUES (?, 'pending')",
-            [(vid,) for vid in dict.fromkeys(video_ids)],
-        )
-        con.commit()
-    finally:
-        con.close()
+    _cache(db_path).enqueue(video_ids)
 
 
 # @lat: [[summaries#Read API]]
-def load_summaries(video_ids: list[str], db_path: Path = SUMMARIES_DB_PATH) -> dict[str, str | None]:
+def load_summaries(video_ids: list[str], db_path: Path | None = None) -> dict[str, str | None]:
     """Return summary text for each id; None when missing or status is not ok."""
-    unique = list(dict.fromkeys(video_ids))
-    if not unique:
-        return {}
-    if not db_path.exists():
-        return dict.fromkeys(unique, None)
-    con = sqlite3.connect(db_path)
-    try:
-        cur = con.cursor()
-        out: dict[str, str | None] = dict.fromkeys(unique, None)
-        for chunk_start in range(0, len(unique), 500):
-            chunk = unique[chunk_start : chunk_start + 500]
-            qmarks = ",".join("?" * len(chunk))
-            rows = cur.execute(
-                f"SELECT video_id, text FROM summaries WHERE video_id IN ({qmarks}) AND status = 'ok'",
-                chunk,
-            ).fetchall()
-            for vid, text in rows:
-                out[str(vid)] = text
-        return out
-    finally:
-        con.close()
+    return _cache(db_path).load_ok(video_ids)
 
 
 # @lat: [[summaries#Fetch loop]]
-async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
+async def fetch_summaries(db_path: Path | None = None) -> None:
     """Process pending/error rows until none remain or attempts cap is reached."""
-    init_db(db_path)
+    status_cache = _cache(db_path)
+    status_cache.init_db()
     agent = _build_agent()
     model_name = os.environ.get(_MODEL_ENV, _DEFAULT_MODEL)
 
-    from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
-
-    videos = load_watch_history(WATCH_HISTORY_PATH)
+    videos = takeout.load_watch_history(config.WATCH_HISTORY_PATH)
     titles: dict[str, str] = {}
     for video in videos:
         if video.title_url is None:
             continue
-        vid = _video_id(video.title_url)
+        vid = takeout.video_id(video.title_url)
         titles[vid] = video.title.removeprefix("Watched ")
 
-    descriptions = _load_descriptions_cache()
     all_ids = list(titles.keys())
-    transcripts = load_transcripts(all_ids, TRANSCRIPTS_DB_PATH)
+    descriptions = load_descriptions(all_ids)
+    transcripts = load_transcripts(all_ids)
 
-    con = sqlite3.connect(db_path)
+    con = status_cache.connect()
     try:
         while True:
             # @lat: [[summaries#Re-summarize policy]]
-            row = con.execute(
-                """
-                SELECT video_id FROM summaries
-                WHERE status IN ('pending', 'error')
-                  AND attempts < ?
-                ORDER BY attempts ASC, RANDOM() LIMIT 1
-                """,
-                (_MAX_ATTEMPTS,),
-            ).fetchone()
-            if row is None:
+            video_id = status_cache.next_retryable(con, max_attempts=_MAX_ATTEMPTS)
+            if video_id is None:
                 break
-            video_id = str(row[0])
             title = titles.get(video_id, video_id)
             description = descriptions.get(video_id)
             transcript = transcripts.get(video_id)
@@ -205,25 +139,15 @@ async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
                 transcript,
                 agent,
             )
-            con.execute(
-                """
-                UPDATE summaries SET
-                    status=?,
-                    text=?,
-                    model=?,
-                    error_message=?,
-                    attempts=attempts+1,
-                    fetched_at=CURRENT_TIMESTAMP,
-                    last_attempt=CURRENT_TIMESTAMP
-                WHERE video_id=?
-                """,
-                (status, text, model_name if status == "ok" else None, err, video_id),
+            status_cache.record_result(
+                con,
+                video_id,
+                status,
+                text=text,
+                error_message=err,
+                extra={"model": model_name if status == "ok" else None},
             )
-            con.commit()
-            counts = con.execute(
-                "SELECT COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0), COUNT(*) FROM summaries",
-            ).fetchone()
-            n_ok, n_total = int(counts[0]), int(counts[1])
+            n_ok, n_total = status_cache.counts(con)
             pct = 100.0 * n_ok / n_total if n_total else 0.0
             logger.info(f"Summary {video_id}: {status} ({n_ok}/{n_total} summarized, {pct:.1f}%)")
     finally:
@@ -231,11 +155,8 @@ async def fetch_summaries(db_path: Path = SUMMARIES_DB_PATH) -> None:
 
 
 async def _main_async() -> None:
-    from youtubebrain.ingest import WATCH_HISTORY_PATH, _video_id, load_watch_history  # noqa: PLC0415
-
     logger.info("Starting summaries fetcher.")
-    videos = load_watch_history(WATCH_HISTORY_PATH)
-    ids = [_video_id(v.title_url) for v in videos if v.title_url is not None]
+    ids = takeout.load_video_ids()
     init_db()
     enqueue(ids)
     logger.info(f"Enqueued {len(ids)} video ids; starting fetch loop.")
@@ -247,3 +168,8 @@ async def _main_async() -> None:
 def main() -> None:
     """Load Takeout IDs, enqueue pending rows, then run the resumable fetch loop."""
     asyncio.run(_main_async())
+
+
+def _cache(db_path: Path | None = None) -> StatusCache:
+    resolved_path = config.SUMMARIES_DB_PATH if db_path is None else db_path
+    return StatusCache(resolved_path, "summaries", _SUMMARIES_EXTRA_COLUMNS)

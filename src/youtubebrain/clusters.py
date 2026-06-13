@@ -9,24 +9,16 @@ import os
 import re
 import shutil
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_ai import Agent
 
-from youtubebrain import embeddings, logger
+from youtubebrain import config, embeddings, logger, markdown
 from youtubebrain.provider import create_model
 
-CLUSTERING_DIR = Path("Markdown/clustering")
-ASSIGNMENTS_JSON_PATH = CLUSTERING_DIR / "assignments.json"
-TOPICS_JSON_PATH = CLUSTERING_DIR / "topics.json"
-META_JSON_PATH = CLUSTERING_DIR / "meta.json"
-MODEL_DIR = CLUSTERING_DIR / "bertopic_model"
-PLOT_PNG_PATH = CLUSTERING_DIR / "clusters.png"
-WIKI_TOPICS_DIR = Path("Markdown/wiki/topics")
-WIKI_CREATORS_DIR = Path("Markdown/wiki/creators")
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _MIN_SIZE_FLOOR = 10
 _MIN_SIZE_ENV = "CLUSTER_MIN_SIZE"
@@ -46,7 +38,7 @@ _LABEL_CONCURRENCY_ENV = "LABEL_CONCURRENCY"
 _REP_TEXT_CHAR_BUDGET = 600
 _OUTLIER_CLUSTER_ID = -1
 _OUTLIER_SLUG = "outliers"
-_FRONTMATTER_FENCE = "---"
+_FRONTMATTER_FENCE = markdown.FRONTMATTER_FENCE
 _PLOT_FIGSIZE = (12, 9)
 _PLOT_DPI = 150
 _PLOT_POINT_SIZE = 4
@@ -87,7 +79,7 @@ class TopicInfo(BaseModel):
 # @lat: [[clusters#Min-cluster-size heuristic]]
 def _resolve_min_cluster_size(n_videos: int) -> int:
     """Resolve `min_cluster_size`: env override beats `max(floor, round(sqrt(n) / granularity))`."""
-    load_dotenv()
+    config.load_env()
     raw = os.environ.get(_MIN_SIZE_ENV)
     if raw:
         try:
@@ -106,7 +98,7 @@ def _cluster_granularity() -> int:
 
     A larger divisor yields a smaller min_cluster_size and therefore more, finer clusters.
     """
-    load_dotenv()
+    config.load_env()
     raw = os.environ.get(_CLUSTER_GRANULARITY_ENV)
     if not raw:
         return _DEFAULT_CLUSTER_GRANULARITY
@@ -120,7 +112,7 @@ def _cluster_granularity() -> int:
 # @lat: [[clusters#Env vars]]
 def _label_concurrency() -> int:
     """Resolve `LABEL_CONCURRENCY` (default 4); used to cap parallel LLM label calls."""
-    load_dotenv()
+    config.load_env()
     raw = os.environ.get(_LABEL_CONCURRENCY_ENV)
     if not raw:
         return _DEFAULT_LABEL_CONCURRENCY
@@ -213,20 +205,17 @@ def _build_label_agent() -> Agent[None, TopicLabel]:
 # @lat: [[clusters#Representative-doc plumbing]]
 def _load_texts_by_id(ids: list[str]) -> dict[str, str]:
     """Walk Markdown/raw/ once, return {id: composed_text} for ids that match a raw file with content."""
-    import yaml  # noqa: PLC0415
-
     wanted = set(ids)
     out: dict[str, str] = {}
-    # Resolve MARKDOWN_RAW_DIR at call time so test monkeypatches take effect.
-    for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
+    for path in markdown.iter_raw_files():
         try:
-            video_id, title, summary, description = embeddings.parse_raw_markdown(path)
-        except (ValueError, yaml.YAMLError) as exc:
+            video_id, title, summary, description = markdown.parse_raw_markdown(path)
+        except ValueError as exc:
             logger.warning(f"Skipping {path}: {exc}")
             continue
         if video_id not in wanted:
             continue
-        text = embeddings.compose_text(title, summary, description)
+        text = markdown.compose_text(title, summary, description)
         if text:
             out[video_id] = text
     missing = [vid for vid in ids if vid not in out]
@@ -284,12 +273,12 @@ async def _label_clusters(
 def load_existing() -> tuple[list[int], list[TopicInfo], dict[str, Any]]:
     """Load the assignments/topics/meta trio; treat any mismatch as empty + warn."""
     empty: tuple[list[int], list[TopicInfo], dict[str, Any]] = ([], [], {})
-    if not ASSIGNMENTS_JSON_PATH.exists() and not TOPICS_JSON_PATH.exists() and not META_JSON_PATH.exists():
+    if not config.ASSIGNMENTS_JSON_PATH.exists() and not config.TOPICS_JSON_PATH.exists() and not config.CLUSTERING_META_JSON_PATH.exists():
         return empty
     try:
-        assignments_raw = json.loads(ASSIGNMENTS_JSON_PATH.read_text(encoding="utf-8")) if ASSIGNMENTS_JSON_PATH.exists() else []
-        topics_raw = json.loads(TOPICS_JSON_PATH.read_text(encoding="utf-8")) if TOPICS_JSON_PATH.exists() else []
-        meta = json.loads(META_JSON_PATH.read_text(encoding="utf-8")) if META_JSON_PATH.exists() else {}
+        assignments_raw = json.loads(config.ASSIGNMENTS_JSON_PATH.read_text(encoding="utf-8")) if config.ASSIGNMENTS_JSON_PATH.exists() else []
+        topics_raw = json.loads(config.TOPICS_JSON_PATH.read_text(encoding="utf-8")) if config.TOPICS_JSON_PATH.exists() else []
+        meta = json.loads(config.CLUSTERING_META_JSON_PATH.read_text(encoding="utf-8")) if config.CLUSTERING_META_JSON_PATH.exists() else {}
     except (ValueError, OSError) as exc:
         logger.warning(f"Cluster store unreadable ({exc}); treating as empty.")
         return empty
@@ -313,23 +302,23 @@ def save_atomic(
     topic_model: Any | None,  # noqa: ANN401
 ) -> None:
     """Write assignments → topics → meta → bertopic_model/ atomically via `*.tmp` + os.replace."""
-    CLUSTERING_DIR.mkdir(parents=True, exist_ok=True)
+    config.CLUSTERING_DIR.mkdir(parents=True, exist_ok=True)
 
-    assignments_tmp = ASSIGNMENTS_JSON_PATH.with_suffix(ASSIGNMENTS_JSON_PATH.suffix + ".tmp")
-    topics_tmp = TOPICS_JSON_PATH.with_suffix(TOPICS_JSON_PATH.suffix + ".tmp")
-    meta_tmp = META_JSON_PATH.with_suffix(META_JSON_PATH.suffix + ".tmp")
-    model_tmp = MODEL_DIR.with_name(MODEL_DIR.name + ".tmp")
+    assignments_tmp = config.ASSIGNMENTS_JSON_PATH.with_suffix(config.ASSIGNMENTS_JSON_PATH.suffix + ".tmp")
+    topics_tmp = config.TOPICS_JSON_PATH.with_suffix(config.TOPICS_JSON_PATH.suffix + ".tmp")
+    meta_tmp = config.CLUSTERING_META_JSON_PATH.with_suffix(config.CLUSTERING_META_JSON_PATH.suffix + ".tmp")
+    model_tmp = config.BERTOPIC_MODEL_DIR.with_name(config.BERTOPIC_MODEL_DIR.name + ".tmp")
 
     try:
         assignments_tmp.write_text(json.dumps(assignments), encoding="utf-8")
-        os.replace(assignments_tmp, ASSIGNMENTS_JSON_PATH)
+        os.replace(assignments_tmp, config.ASSIGNMENTS_JSON_PATH)
 
         topics_payload = [t.model_dump() for t in topics]
         topics_tmp.write_text(json.dumps(topics_payload, indent=2), encoding="utf-8")
-        os.replace(topics_tmp, TOPICS_JSON_PATH)
+        os.replace(topics_tmp, config.TOPICS_JSON_PATH)
 
         meta_tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        os.replace(meta_tmp, META_JSON_PATH)
+        os.replace(meta_tmp, config.CLUSTERING_META_JSON_PATH)
 
         if topic_model is not None:
             embedding_model_name = meta.get("embedding_model")
@@ -341,8 +330,8 @@ def save_atomic(
                 save_ctfidf=True,
                 save_embedding_model=save_embedding_model,
             )
-            shutil.rmtree(MODEL_DIR, ignore_errors=True)
-            os.replace(model_tmp, MODEL_DIR)
+            shutil.rmtree(config.BERTOPIC_MODEL_DIR, ignore_errors=True)
+            os.replace(model_tmp, config.BERTOPIC_MODEL_DIR)
     finally:
         for tmp in (assignments_tmp, topics_tmp, meta_tmp):
             if tmp.exists():
@@ -475,14 +464,12 @@ def _resolve_slugs(topics: list[TopicInfo]) -> dict[int, str]:
 # @lat: [[clusters#Wiki topics#Page rendering]]
 def _load_titles_by_id(ids: list[str]) -> dict[str, str]:
     """Walk Markdown/raw/ once; return {id: title} for ids that match a raw file."""
-    import yaml  # noqa: PLC0415
-
     wanted = set(ids)
     out: dict[str, str] = {}
-    for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
+    for path in markdown.iter_raw_files():
         try:
-            video_id, title, _summary, _description = embeddings.parse_raw_markdown(path)
-        except (ValueError, yaml.YAMLError) as exc:
+            video_id, title, _summary, _description = markdown.parse_raw_markdown(path)
+        except ValueError as exc:
             logger.warning(f"Skipping {path}: {exc}")
             continue
         if video_id in wanted:
@@ -544,7 +531,7 @@ def _inject_topic_into_raw(path: Path, slug: str, cluster_id: int) -> None:
     """
     import yaml  # noqa: PLC0415
 
-    fm, body_tail = embeddings.read_frontmatter(path)
+    fm, body_tail = markdown.read_frontmatter(path)
     fm["topic"] = slug
     fm["cluster_id"] = cluster_id
     yaml_body = yaml.safe_dump(
@@ -573,8 +560,8 @@ def write_wiki_topics(assignments: list[int], ids: list[str], topics: list[Topic
     """
     slug_by_cluster = _resolve_slugs(topics)
 
-    shutil.rmtree(WIKI_TOPICS_DIR, ignore_errors=True)
-    WIKI_TOPICS_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(config.WIKI_TOPICS_DIR, ignore_errors=True)
+    config.WIKI_TOPICS_DIR.mkdir(parents=True, exist_ok=True)
 
     members_by_cluster: dict[int, list[str]] = {}
     for vid, cid in zip(ids, assignments, strict=True):
@@ -586,14 +573,14 @@ def write_wiki_topics(assignments: list[int], ids: list[str], topics: list[Topic
         slug = slug_by_cluster[topic.cluster_id]
         member_ids = members_by_cluster.get(topic.cluster_id, [])
         members = [(vid, titles_by_id.get(vid, vid)) for vid in member_ids]
-        page_dir = WIKI_TOPICS_DIR / slug
+        page_dir = config.WIKI_TOPICS_DIR / slug
         page_dir.mkdir(parents=True, exist_ok=True)
         (page_dir / f"{slug}.md").write_text(_render_topic_page(topic, slug, members), encoding="utf-8")
 
     n_updated = 0
     n_missing = 0
     for vid, cid in zip(ids, assignments, strict=True):
-        raw_path = embeddings.MARKDOWN_RAW_DIR / f"{vid}.md"
+        raw_path = config.MARKDOWN_RAW_DIR / f"{vid}.md"
         if not raw_path.exists():
             n_missing += 1
             continue
@@ -618,9 +605,9 @@ def _iter_channels_from_raw() -> dict[str, dict[str, str]]:
     path separators / `..` are rejected for filesystem safety.
     """
     channels: dict[str, dict[str, str]] = {}
-    for path in embeddings.iter_raw_files(embeddings.MARKDOWN_RAW_DIR):
+    for path in markdown.iter_raw_files():
         try:
-            fm, _ = embeddings.read_frontmatter(path)
+            fm, _ = markdown.read_frontmatter(path)
         except (ValueError, OSError) as exc:
             logger.warning(f"Skipping {path} during creator scan: {exc}")
             continue
@@ -648,12 +635,12 @@ def write_wiki_creators() -> tuple[int, int]:
     import yaml  # noqa: PLC0415
 
     channels = _iter_channels_from_raw()
-    WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
+    config.WIKI_CREATORS_DIR.mkdir(parents=True, exist_ok=True)
 
     n_created = 0
     n_existing = 0
     for channel_id, channel in channels.items():
-        path = WIKI_CREATORS_DIR / f"{channel_id}.md"
+        path = config.WIKI_CREATORS_DIR / f"{channel_id}.md"
         if path.exists():
             n_existing += 1
             continue
@@ -841,8 +828,8 @@ def cluster_all() -> int:
         f"Cluster run complete: n_clusters={n_clusters}, n_outliers={n_outliers}, min_cluster_size={min_size}, llm_model={meta['llm_model']!r}.",
     )
     try:
-        plot_clusters(arr, assignments, topics, PLOT_PNG_PATH)
-        logger.info(f"Cluster plot written to {PLOT_PNG_PATH}.")
+        plot_clusters(arr, assignments, topics, config.PLOT_PNG_PATH)
+        logger.info(f"Cluster plot written to {config.PLOT_PNG_PATH}.")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Failed to render cluster plot: {exc}")
     n_topics_written, n_raw_updated = write_wiki_topics(assignments, ids, topics)

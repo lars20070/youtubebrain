@@ -1,7 +1,29 @@
 {
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lat hook claude UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lat hook claude Stop"
+          }
+        ]
+      }
+    ]
+  },
+  "language": "python",
   "projectName": "Youtubebrain",
   "description": "Markdown knowledge base from YouTube videos",
-  "language": "python",
   "pythonVersion": "3.12",
   "framework": "pydantic-ai + pydantic-graph",
   "testFramework": "pytest",
@@ -74,27 +96,5 @@
     "format": "uv run ruff format .",
     "lint": "uv run ruff check --fix .",
     "typecheck": "uv run pyright ."
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "lat hook claude UserPromptSubmit"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "lat hook claude Stop"
-          }
-        ]
-      }
-    ]
   }
 }

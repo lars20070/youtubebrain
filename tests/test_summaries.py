@@ -186,9 +186,9 @@ async def test_fetch_summaries_honors_model_env(
         title = "Watched Hello"
         title_url = "https://www.youtube.com/watch?v=vid1"
 
-    monkeypatch.setattr("youtubebrain.ingest.load_watch_history", lambda _p: [_Video()])
-    monkeypatch.setattr("youtubebrain.ingest._video_id", lambda _u: "vid1")
-    monkeypatch.setattr("youtubebrain.summaries._load_descriptions_cache", lambda: {"vid1": "desc"})
+    monkeypatch.setattr("youtubebrain.summaries.takeout.load_watch_history", lambda _p: [_Video()])
+    monkeypatch.setattr("youtubebrain.summaries.takeout.video_id", lambda _u: "vid1")
+    monkeypatch.setattr("youtubebrain.summaries.load_descriptions", lambda _ids, _db=None: {"vid1": "desc"})
     monkeypatch.setattr("youtubebrain.summaries.load_transcripts", lambda _ids, _db=None: {"vid1": "transcript"})
     monkeypatch.setattr("youtubebrain.summaries._build_agent", lambda: _StubAgent("out"))
 
@@ -223,9 +223,9 @@ async def test_fetch_summaries_persists_ok(
         title = "Watched Hello"
         title_url = "https://www.youtube.com/watch?v=vid1"
 
-    monkeypatch.setattr("youtubebrain.ingest.load_watch_history", lambda _p: [_Video()])
-    monkeypatch.setattr("youtubebrain.ingest._video_id", lambda _u: "vid1")
-    monkeypatch.setattr("youtubebrain.summaries._load_descriptions_cache", lambda: {"vid1": "desc"})
+    monkeypatch.setattr("youtubebrain.summaries.takeout.load_watch_history", lambda _p: [_Video()])
+    monkeypatch.setattr("youtubebrain.summaries.takeout.video_id", lambda _u: "vid1")
+    monkeypatch.setattr("youtubebrain.summaries.load_descriptions", lambda _ids, _db=None: {"vid1": "desc"})
     monkeypatch.setattr("youtubebrain.summaries.load_transcripts", lambda _ids, _db=None: {"vid1": "transcript"})
     monkeypatch.setattr("youtubebrain.summaries._build_agent", lambda: _StubAgent("out"))
 
@@ -263,9 +263,9 @@ async def test_fetch_summaries_skipped_when_no_inputs(
         title_url = "https://www.youtube.com/watch?v=vid1"
 
     stub = _StubAgent("should not run")
-    monkeypatch.setattr("youtubebrain.ingest.load_watch_history", lambda _p: [_Video()])
-    monkeypatch.setattr("youtubebrain.ingest._video_id", lambda _u: "vid1")
-    monkeypatch.setattr("youtubebrain.summaries._load_descriptions_cache", lambda: {})
+    monkeypatch.setattr("youtubebrain.summaries.takeout.load_watch_history", lambda _p: [_Video()])
+    monkeypatch.setattr("youtubebrain.summaries.takeout.video_id", lambda _u: "vid1")
+    monkeypatch.setattr("youtubebrain.summaries.load_descriptions", lambda _ids, _db=None: {})
     monkeypatch.setattr("youtubebrain.summaries.load_transcripts", lambda _ids, _db=None: {"vid1": None})
     monkeypatch.setattr("youtubebrain.summaries._build_agent", lambda: stub)
 

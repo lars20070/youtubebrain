@@ -1,13 +1,13 @@
-"""Unit tests for the YouTube Data API description fetcher and cache."""
+"""Unit tests for the SQLite-backed descriptions stage."""
 
-import json
+import sqlite3
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from youtubebrain.descriptions import YOUTUBE_API_URL, fetch_descriptions
+from youtubebrain.descriptions import YOUTUBE_API_URL, enqueue, fetch_descriptions, init_db, load_descriptions
 
 
 def _api_response(items: list[dict[str, object]]) -> httpx.Response:
@@ -23,117 +23,169 @@ def _set_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("API_KEY_YOUTUBE", "test-key")
 
 
-# @lat: [[descriptions#Tests#Uses cache first]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_uses_cache_first(tmp_path: Path) -> None:
-    """Pre-seeded cache entries are returned without any HTTP call."""
-    cache_path = tmp_path / "descriptions.json"
-    cache_path.write_text(json.dumps({"abc": "hello"}))
-    with respx.mock(assert_all_called=False) as router:
-        route = router.get(YOUTUBE_API_URL)
-        result = await fetch_descriptions(["abc"], cache_path)
-    assert result == {"abc": "hello"}
-    assert not route.called
+# @lat: [[descriptions#Tests#Read API missing db]]
+def test_load_descriptions_missing_db_returns_none_map(tmp_path: Path) -> None:
+    """load_descriptions returns a full None map when the sqlite file is missing."""
+    db_path = tmp_path / "descriptions.sqlite"
+    assert load_descriptions(["a", "b", "a"], db_path) == {"a": None, "b": None}
+
+
+# @lat: [[descriptions#Tests#Read API ok only]]
+def test_load_descriptions_returns_ok_only(tmp_path: Path) -> None:
+    """load_descriptions exposes text only for rows where status is ok."""
+    db_path = tmp_path / "descriptions.sqlite"
+    init_db(db_path)
+    con = sqlite3.connect(db_path)
+    try:
+        con.executemany(
+            "INSERT INTO descriptions (video_id, status, text) VALUES (?, ?, ?)",
+            [
+                ("ok1", "ok", "desc ok"),
+                ("missing1", "missing", None),
+                ("error1", "error", "hidden"),
+            ],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    assert load_descriptions(["ok1", "missing1", "error1"], db_path) == {
+        "ok1": "desc ok",
+        "missing1": None,
+        "error1": None,
+    }
 
 
 # @lat: [[descriptions#Tests#Batches in fifties]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_batches_in_50s(tmp_path: Path) -> None:
-    """75 uncached IDs are fetched in exactly two batches."""
-    cache_path = tmp_path / "descriptions.json"
+def test_fetch_descriptions_batches_in_50s(tmp_path: Path) -> None:
+    """75 queued IDs are fetched in exactly two HTTP batches."""
+    db_path = tmp_path / "descriptions.sqlite"
     ids = [f"id{i:03d}" for i in range(75)]
+    init_db(db_path)
+    enqueue(ids, db_path)
     with respx.mock() as router:
         route = router.get(YOUTUBE_API_URL).mock(
             side_effect=lambda request: _api_response(
                 [_video_item(vid, f"desc-{vid}") for vid in request.url.params["id"].split(",")],
             ),
         )
-        result = await fetch_descriptions(ids, cache_path)
+        fetch_descriptions(db_path)
+
     assert route.call_count == 2
-    assert len(result) == 75
-    assert result["id000"] == "desc-id000"
-    assert result["id074"] == "desc-id074"
+    loaded = load_descriptions(ids, db_path)
+    assert loaded["id000"] == "desc-id000"
+    assert loaded["id074"] == "desc-id074"
 
 
-# @lat: [[descriptions#Tests#Stores None for missing]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_stores_none_for_missing(tmp_path: Path) -> None:
-    """IDs the API does not return are cached as None and surfaced as None to the caller."""
-    cache_path = tmp_path / "descriptions.json"
+# @lat: [[descriptions#Tests#Missing rows become missing status]]
+def test_fetch_descriptions_marks_missing_rows(tmp_path: Path) -> None:
+    """IDs absent from the API response are persisted as terminal missing rows."""
+    db_path = tmp_path / "descriptions.sqlite"
+    init_db(db_path)
+    enqueue(["present", "gone1", "gone2"], db_path)
     with respx.mock() as router:
         router.get(YOUTUBE_API_URL).mock(return_value=_api_response([_video_item("present", "yes")]))
-        result = await fetch_descriptions(["present", "gone1", "gone2"], cache_path)
-    assert result == {"present": "yes", "gone1": None, "gone2": None}
-    cache = json.loads(cache_path.read_text())
-    assert cache == {"present": "yes", "gone1": None, "gone2": None}
+        fetch_descriptions(db_path)
+
+    assert load_descriptions(["present", "gone1", "gone2"], db_path) == {"present": "yes", "gone1": None, "gone2": None}
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute(
+            "SELECT video_id, status FROM descriptions WHERE video_id IN ('present','gone1','gone2') ORDER BY video_id",
+        ).fetchall()
+    finally:
+        con.close()
+    assert rows == [("gone1", "missing"), ("gone2", "missing"), ("present", "ok")]
 
 
-# @lat: [[descriptions#Tests#Persists cache per batch]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_writes_cache_after_each_batch(tmp_path: Path) -> None:
-    """A failed second batch leaves first-batch entries cached and returns None for the failed ids."""
-    cache_path = tmp_path / "descriptions.json"
+# @lat: [[descriptions#Tests#Persists per batch]]
+def test_fetch_descriptions_persists_per_batch(tmp_path: Path) -> None:
+    """A failed later batch still leaves earlier successful rows committed."""
+    db_path = tmp_path / "descriptions.sqlite"
     ids = [f"id{i:03d}" for i in range(60)]
-    responses = [
-        _api_response([_video_item(vid, f"desc-{vid}") for vid in ids[:50]]),
-        httpx.Response(500, json={"error": "boom"}),
-    ]
+    init_db(db_path)
+    enqueue(ids, db_path)
+    batches: list[list[str]] = []
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        # Batch membership is randomized by pending_ids, so echo the requested
+        # ids back instead of assuming which ids land in the first batch.
+        batch = request.url.params["id"].split(",")
+        batches.append(batch)
+        if len(batches) == 1:
+            return _api_response([_video_item(vid, f"desc-{vid}") for vid in batch])
+        return httpx.Response(500, json={"error": "boom"})
+
     with respx.mock() as router:
-        router.get(YOUTUBE_API_URL).mock(side_effect=responses)
-        result = await fetch_descriptions(ids, cache_path)
-    cache = json.loads(cache_path.read_text())
-    assert cache["id000"] == "desc-id000"
-    assert cache["id049"] == "desc-id049"
-    assert "id050" not in cache
-    assert result["id049"] == "desc-id049"
-    assert result["id050"] is None
-    assert result["id059"] is None
+        router.get(YOUTUBE_API_URL).mock(side_effect=_respond)
+        fetch_descriptions(db_path)
+
+    assert len(batches) == 2
+    ok_batch, failed_batch = batches
+    assert len(ok_batch) == 50
+    assert len(failed_batch) == 10
+    loaded = load_descriptions(ids, db_path)
+    for vid in ok_batch:
+        assert loaded[vid] == f"desc-{vid}"
+    for vid in failed_batch:
+        assert loaded[vid] is None
+
+    con = sqlite3.connect(db_path)
+    try:
+        n_ok = con.execute("SELECT COUNT(*) FROM descriptions WHERE status='ok'").fetchone()[0]
+        n_error = con.execute(
+            "SELECT COUNT(*) FROM descriptions WHERE status='error' AND attempts=1",
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert int(n_ok) == 50
+    assert int(n_error) == 10
 
 
-# @lat: [[descriptions#Tests#Handles API failure]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_handles_api_failure(tmp_path: Path) -> None:
-    """An HTTP 500 from the API returns None for every id and does not raise."""
-    cache_path = tmp_path / "descriptions.json"
+# @lat: [[descriptions#Tests#Error rows retryable]]
+def test_fetch_descriptions_retries_error_rows(tmp_path: Path) -> None:
+    """Rows marked error are retried on the next run while attempts remain below the cap."""
+    db_path = tmp_path / "descriptions.sqlite"
+    init_db(db_path)
+    enqueue(["a", "b"], db_path)
     with respx.mock() as router:
         router.get(YOUTUBE_API_URL).mock(return_value=httpx.Response(500, json={"error": "boom"}))
-        result = await fetch_descriptions(["a", "b"], cache_path)
-    assert result == {"a": None, "b": None}
-    assert not cache_path.exists()
+        fetch_descriptions(db_path)
 
-
-# @lat: [[descriptions#Tests#Handles network error]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_handles_network_error(tmp_path: Path) -> None:
-    """A connect error returns None for every id and does not raise."""
-    cache_path = tmp_path / "descriptions.json"
     with respx.mock() as router:
-        router.get(YOUTUBE_API_URL).mock(side_effect=httpx.ConnectError("offline"))
-        result = await fetch_descriptions(["a", "b"], cache_path)
-    assert result == {"a": None, "b": None}
-    assert not cache_path.exists()
+        router.get(YOUTUBE_API_URL).mock(
+            return_value=_api_response([_video_item("a", "A"), _video_item("b", "B")]),
+        )
+        fetch_descriptions(db_path)
+
+    assert load_descriptions(["a", "b"], db_path) == {"a": "A", "b": "B"}
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute("SELECT video_id, status, attempts FROM descriptions ORDER BY video_id").fetchall()
+    finally:
+        con.close()
+    assert rows == [("a", "ok", 2), ("b", "ok", 2)]
 
 
-# @lat: [[descriptions#Tests#Raises without API key]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_raises_without_api_key(
+# @lat: [[descriptions#Tests#API key only when pending]]
+def test_fetch_descriptions_requires_key_only_for_pending_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """fetch_descriptions raises RuntimeError if API_KEY_YOUTUBE is unset."""
+    """Missing API key raises only when retryable pending/error rows exist."""
+    db_path = tmp_path / "descriptions.sqlite"
+    init_db(db_path)
+    enqueue(["a"], db_path)
     monkeypatch.delenv("API_KEY_YOUTUBE", raising=False)
-    cache_path = tmp_path / "descriptions.json"
     with pytest.raises(RuntimeError, match="API_KEY_YOUTUBE"):
-        await fetch_descriptions(["abc"], cache_path)
+        fetch_descriptions(db_path)
 
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("UPDATE descriptions SET status='ok', text='A' WHERE video_id='a'")
+        con.commit()
+    finally:
+        con.close()
 
-# @lat: [[descriptions#Tests#Deduplicates input ids]]
-@pytest.mark.asyncio
-async def test_fetch_descriptions_deduplicates_input(tmp_path: Path) -> None:
-    """Duplicate input IDs result in a single fetched entry and a single result key."""
-    cache_path = tmp_path / "descriptions.json"
-    with respx.mock() as router:
-        route = router.get(YOUTUBE_API_URL).mock(return_value=_api_response([_video_item("abc", "x")]))
-        result = await fetch_descriptions(["abc", "abc", "abc"], cache_path)
-    assert route.call_count == 1
-    assert result == {"abc": "x"}
+    # No pending/error rows, so no API call and therefore no key required.
+    fetch_descriptions(db_path)

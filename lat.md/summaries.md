@@ -4,15 +4,15 @@ lat:
 ---
 # Summaries
 
-Generates per-video summaries via a configurable LLM provider (Ollama by default; see [[provider]]), stores them in SQLite for resumable runs, and exposes plain text for [[ingest#Markdown writer]] via [[summaries#Read API]].
+Generates per-video summaries via a configurable LLM provider (Ollama by default; see [[provider]]), stores them in SQLite for resumable runs, and exposes plain text for [[markdown#Markdown writer]] via [[summaries#Read API]].
 
-The pipeline mirrors [[transcripts]]: a slow fetcher persists durable state, while [[src/youtubebrain/ingest.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. Summaries synthesise title, description, and transcript; sponsorship and merch boilerplate are ignored by prompt instruction, not regex stripping.
+The pipeline mirrors [[transcripts]]: a slow fetcher persists durable state, while [[src/youtubebrain/markdown.py#main]] stays fast by only reading the cache when writing `Markdown/raw/<video_id>.md`. Summaries synthesise title, description, and transcript; sponsorship and merch boilerplate are ignored by prompt instruction, not regex stripping.
 
 ```mermaid
 flowchart TD
     Takeout[Takeout_watch_history_json]
     Takeout -->|summaries_main| SM[uv_run_summaries]
-    Takeout -->|ingest_main| Ingest[uv_run_ingest]
+    Takeout -->|markdown_main| Markdown[uv_run_markdown]
     Desc[(descriptions_json)]
     TxDB[(transcripts_sqlite)]
     SM -->|enqueue| SmDB[(summaries_sqlite)]
@@ -20,39 +20,39 @@ flowchart TD
     TxDB --> SM
     SM -->|fetch_summaries| LLM[Provider_via_pydantic_ai]
     LLM --> SmDB
-    Ingest -->|load_summaries| SmDB
-    Ingest --> MD[Markdown_raw]
+    Markdown -->|load_summaries| SmDB
+    Markdown --> MD[Markdown_raw]
 ```
 
 ## CLI entry
 
 [[src/youtubebrain/summaries.py#main]] is the `uv run summaries` entry point: Takeout IDs, enqueue, then the async fetch loop.
 
-It lazy-imports [[ingest#Loader]] helpers (`WATCH_HISTORY_PATH`, `load_watch_history`, `_video_id`) inside [[src/youtubebrain/summaries.py#_main_async]] to avoid import cycles with [[src/youtubebrain/ingest.py#main]], which imports [[src/youtubebrain/summaries.py#load_summaries]].
+`_main_async` pulls ids from [[src/youtubebrain/takeout.py#load_video_ids]], while [[src/youtubebrain/summaries.py#fetch_summaries]] uses [[src/youtubebrain/takeout.py#load_watch_history]] and [[src/youtubebrain/takeout.py#video_id]] to build title context for each row.
 
 ## SQLite schema
 
-[[src/youtubebrain/summaries.py#init_db]] ensures `Markdown/.cache/` exists, opens `summaries.sqlite`, sets WAL via `PRAGMA journal_mode=WAL`, and creates the `summaries` table plus `idx_summaries_status` on `status` if missing.
+[[src/youtubebrain/summaries.py#init_db]] delegates to [[src/youtubebrain/cache.py#StatusCache#init_db]] via a `StatusCache` configured for the `summaries` table.
 
-Each row is keyed by `video_id`. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap). `text` holds the summary body; `model` records which model id produced an `ok` row. `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and caps.
+Shared base columns come from [[cache#StatusCache API]]: `text` holds the summary body, and `error_message`, `fetched_at`, `last_attempt`, and `attempts` support debugging and retry caps. The summary-specific extra column `model` records which model id produced an `ok` row. `status` drives resumability: `pending` (queued), `ok` (summary ready for markdown), `skipped` (no description or transcript to summarize), and `error` (LLM or transport failure; retried until `attempts` reaches the cap).
 
 ## Enqueue
 
-[[src/youtubebrain/summaries.py#enqueue]] deduplicates IDs, ensures the schema, and inserts pending rows with `INSERT OR IGNORE`.
+[[src/youtubebrain/summaries.py#enqueue]] delegates to [[src/youtubebrain/cache.py#StatusCache#enqueue]] for dedupe + pending-row insertion.
 
 Existing primary keys are left unchanged, so re-running after a partial night only adds new ids from an updated Takeout export without clobbering completed rows.
 
 ## Read API
 
-[[src/youtubebrain/summaries.py#load_summaries]] is a synchronous, read-only lookup of plain `text` for ok rows.
+[[src/youtubebrain/summaries.py#load_summaries]] is a wrapper over [[src/youtubebrain/cache.py#StatusCache#load_ok]].
 
-If the database file is missing, every requested id maps to `None`. Otherwise ids are deduplicated, queried in chunks of 500, and only `status='ok'` rows return text so ingest can render `_(unavailable)_` for every other case.
+If the database file is missing, every requested id maps to `None`. Otherwise only `status='ok'` rows return text so markdown can render `_(unavailable)_` for every other case.
 
 ## Fetch loop
 
 [[src/youtubebrain/summaries.py#fetch_summaries]] runs the summarization worker: one video at a time, async LLM calls via pydantic-ai.
 
-Row selection uses `WHERE status IN ('pending','error') AND attempts < 5` ordered by `attempts ASC` then `RANDOM() LIMIT 1`. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[ingest#Loader]], descriptions from `Markdown/.cache/descriptions.json`, and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows store `text` and `model`; each commit logs `n_ok/n_total` and percent complete.
+Row selection uses [[src/youtubebrain/cache.py#StatusCache#next_retryable]] with statuses `pending/error` and attempt cap 5. Rows with `status='ok'` or `status='skipped'` never match again. On each iteration the loop loads titles from [[takeout#Loader]], descriptions via [[descriptions#Read API]], and transcripts via [[transcripts#Read API]], then calls [[src/youtubebrain/summaries.py#summarize_one]]. Successful rows are persisted through [[src/youtubebrain/cache.py#StatusCache#record_result]], and progress logging uses [[src/youtubebrain/cache.py#StatusCache#counts]].
 
 ## Agent build
 
@@ -86,7 +86,7 @@ There is no input-hash or transcript-arrival re-summarize path: if a transcript 
 
 ## Tests
 
-Pytest coverage for SQLite helpers, agent wiring, summarize_one branches, fetch loop persistence, and ingest markdown wiring; each leaf below maps to one `# @lat:` comment in `tests/test_summaries.py` or `tests/test_ingest.py`.
+Pytest coverage for SQLite helpers, agent wiring, summarize_one branches, and fetch-loop persistence; each leaf below maps to one `# @lat:` comment in `tests/test_summaries.py`.
 
 ### Schema and enqueue idempotent
 

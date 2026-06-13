@@ -5,13 +5,12 @@ from __future__ import annotations
 import os
 from enum import StrEnum
 
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-from youtubebrain import logger
+from youtubebrain import config, logger
 
 _DEFAULT_MODEL = "qwen3:32b"
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
@@ -46,7 +45,7 @@ def _check_api_key(api_key: str | None, provider: Provider) -> None:
 # @lat: [[provider#Model factory]]
 def create_model() -> Model:
     """Build a pydantic-ai model based on PROVIDER and MODEL env vars."""
-    load_dotenv()
+    config.load_env()
     provider_value = os.environ.get("PROVIDER", Provider.ollama.value)
     try:
         provider = Provider(provider_value)
