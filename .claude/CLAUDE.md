@@ -40,7 +40,7 @@ uv run pytest -v
 uv run pytest tests/test_transcripts.py
 
 # Run specific test
-uv run pytest tests/test_transcripts.py::test_load_transcripts_missing_db
+uv run pytest tests/test_transcripts.py::test_load_transcripts_none_for_non_ok
 
 # Run tests in parallel
 uv run pytest -n auto
@@ -85,19 +85,9 @@ lat check
 
 ## Architecture
 
-A linear pipeline of small CLI tools in `src/youtubebrain/`, each reading and writing files under `Markdown/` (gitignored). Key modules:
+A linear pipeline of small CLI tools in `src/youtubebrain/`, each reading and writing files under `Markdown/` (gitignored).
 
-- **models.py**: Pydantic models for the Takeout watch-history records (`WatchedVideo`, `Subtitle`)
-- **ingest.py**: parses `Takeout/.../watch-history.json` and writes one markdown file per video to `Markdown/raw/`
-- **descriptions.py**: fetches video descriptions via the YouTube Data API v3 with on-disk caching
-- **transcripts.py**: slow, throttled, resumable caption fetcher (youtube-transcript-api with yt-dlp and pytubefix fallbacks) backed by SQLite
-- **summaries.py**: LLM summarizer (pydantic-ai agent) backed by SQLite
-- **embeddings.py**: local SentenceTransformer encoding into `Markdown/embeddings/`
-- **clusters.py**: UMAP + HDBSCAN via BERTopic with LLM-named topics; seeds `Markdown/wiki/`
-- **provider.py**: factory building the pydantic-ai model from `PROVIDER`/`MODEL` env vars
-- **logger.py**: loguru setup writing `youtubebrain.log`
-
-Architecture details, design decisions, and test specs live in `lat.md/` — use `lat search` / `lat locate` to find sections, and keep `lat.md/` in sync with any code change.
+Do not duplicate architecture details here. The full architecture — module responsibilities, the per-stage run order, design decisions, and test specs — lives in the `lat.md/` knowledge base. Start at `lat.md/overview.md` (run order, prerequisites, and workflow diagram), then read the per-module file for the area you are working on (e.g. `lat.md/markdown.md`, `lat.md/clusters.md`). Use `lat search` / `lat locate` to find sections, and keep `lat.md/` in sync with any code change.
 
 ## MCP Servers
 
