@@ -1,27 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(git -C /Users/lars/Code/youtubebrain status --short)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff --stat)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- src/youtubebrain/ tests/)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- lat.md/)",
-      "Bash(awk -F: '{print $1}')",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- .vscode/settings.json .claude/settings.json)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- .vscode/settings.json)",
-      "Bash(git -C /Users/lars/Code/youtubebrain show HEAD:lat.md/ingest.md)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- src/youtubebrain/transcripts.py)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- src/youtubebrain/summaries.py)",
-      "Bash(git -C /Users/lars/Code/youtubebrain show HEAD:lat.md/transcripts.md)",
-      "Bash(sed -n '/## SQLite schema/,/## Enqueue/p')",
-      "Bash(git -C /Users/lars/Code/youtubebrain show HEAD:lat.md/summaries.md)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- pyproject.toml src/youtubebrain/config.py src/youtubebrain/ingest.py src/youtubebrain/summaries.py)",
-      "Bash(git -C /Users/lars/Code/youtubebrain diff -- tests/test_ingest.py tests/test_summaries.py tests/test_transcripts.py lat.md/config.md lat.md/summaries.md)",
-      "Bash(git -C /Users/lars/Code/youtubebrain show HEAD:src/youtubebrain/descriptions.py)",
-      "Bash(sed -n 74,84p /Users/lars/Code/youtubebrain/src/youtubebrain/ingest.py)",
-      "Bash(sed -n '/## CLI entry/,/## Markdown writer/p' /Users/lars/Code/youtubebrain/lat.md/ingest.md)",
-      "Bash(sed -n 11,25p /Users/lars/Code/youtubebrain/lat.md/summaries.md)"
-    ]
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
