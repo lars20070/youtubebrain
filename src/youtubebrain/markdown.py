@@ -104,7 +104,7 @@ def write_markdown(
         raise ValueError(f"WatchedVideo has no title_url: {video.title!r}")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{takeout.video_id(video.title_url)}.md"
-    path.write_text(render_markdown(video, description, transcript, summary))
+    path.write_text(render_markdown(video, description, transcript, summary), encoding="utf-8")
     return path
 
 
