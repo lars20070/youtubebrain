@@ -12,7 +12,7 @@ Google Takeout exports include title and channel metadata but not long-form vide
 
 [[src/youtubebrain/descriptions.py#main]] is the `uv run descriptions` entrypoint.
 
-It removes legacy JSON cache files, loads ids from [[takeout#Video IDs]], enqueues rows, then runs the fetch loop.
+It loads ids from [[takeout#Video IDs]], enqueues rows, then runs the fetch loop.
 
 ## SQLite schema
 
@@ -64,7 +64,7 @@ The error text points to Google Cloud setup and `.env` configuration.
 
 ## Tests
 
-Coverage in `tests/test_descriptions.py` verifies read API behavior, batching, retry semantics, and the CLI wiring/legacy-cleanup path.
+Coverage in `tests/test_descriptions.py` verifies read API behavior, batching, retry semantics, and CLI wiring.
 
 ### Read API missing db
 
@@ -94,6 +94,3 @@ Rows marked `error` are retried on later runs and can transition to `ok` with in
 
 Missing `API_KEY_YOUTUBE` raises only when pending/error rows exist; settled caches skip key lookup.
 
-### Main wiring and legacy cleanup
-
-`main()` removes legacy JSON files, enqueues Takeout ids, and invokes the fetch loop.

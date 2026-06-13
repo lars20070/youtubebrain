@@ -125,23 +125,10 @@ def fetch_descriptions(db_path: Path | None = None) -> None:
         con.close()
 
 
-def _remove_legacy_json_cache() -> None:
-    legacy_path = config.DESCRIPTIONS_CACHE_PATH
-    legacy_tmp = legacy_path.with_suffix(f"{legacy_path.suffix}.tmp")
-    removed: list[str] = []
-    for path in (legacy_path, legacy_tmp):
-        if path.exists():
-            path.unlink()
-            removed.append(str(path))
-    if removed:
-        logger.info(f"Removed legacy descriptions cache file(s): {', '.join(removed)}")
-
-
 # @lat: [[descriptions#CLI entry]]
 def main() -> None:
     """Load Takeout IDs, enqueue pending rows, then run the resumable descriptions fetch loop."""
     logger.info("Starting descriptions fetcher.")
-    _remove_legacy_json_cache()
     ids = takeout.load_video_ids()
     init_db()
     enqueue(ids)
