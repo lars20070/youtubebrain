@@ -7,8 +7,7 @@ import httpx
 import pytest
 import respx
 
-from youtubebrain import descriptions
-from youtubebrain.descriptions import YOUTUBE_API_URL, enqueue, fetch_descriptions, init_db, load_descriptions, main
+from youtubebrain.descriptions import YOUTUBE_API_URL, enqueue, fetch_descriptions, init_db, load_descriptions
 
 
 def _api_response(items: list[dict[str, object]]) -> httpx.Response:
