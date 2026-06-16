@@ -58,7 +58,7 @@ Row selection uses [[src/youtubebrain/cache.py#StatusCache#next_retryable]] with
 
 [[src/youtubebrain/summaries.py#_build_agent]] constructs a pydantic-ai `Agent` whose model is built by [[provider#Model factory]].
 
-The factory dispatches on the `PROVIDER` env var (default `ollama`) and returns either an `OpenAIChatModel` or a pydantic-ai shorthand string. The agent is wrapped with `output_type=str`, the system prompt, and `retries=3`. The `model` column in the SQLite table records the value of the `MODEL` env var (default `qwen3:32b`) for each `ok` row.
+The factory dispatches on the `PROVIDER` env var (default `ollama`) and always returns a configured `OpenAIChatModel`. The agent is wrapped with `output_type=str`, the system prompt, and `retries=3`. The `model` column in the SQLite table records the `MODEL` env var value (default `qwen3:32b`) for each `ok` row.
 
 ## System prompt
 

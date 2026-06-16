@@ -20,7 +20,7 @@
     "me-dutour-mathieu.vscode-github-actions",
     "GitHub.vscode-pull-request-github",
     // Copilot
-    "GitHub.copilot",
+    "github.copilot-chat",
     "ms-vscode.vscode-copilot-data-analysis",
     // spell checker
     "streetsidesoftware.code-spell-checker",
